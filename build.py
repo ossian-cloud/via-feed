@@ -73,7 +73,10 @@ def regions_of(p):
 
 
 def place(p):
-    bits = [", ".join(p.get("comuni", [])), ", ".join(p.get("province", [])) and "prov. " + ", ".join(p["province"]),
+    # the portal sometimes lists a region or province name among the comuni
+    not_comuni = {slug(x) for x in REGIONS + p.get("regioni", []) + p.get("province", [])}
+    comuni = [c for c in p.get("comuni", []) if slug(c) not in not_comuni]
+    bits = [", ".join(comuni), ", ".join(p.get("province", [])) and "prov. " + ", ".join(p["province"]),
             ", ".join(regions_of(p))]
     return " · ".join(b for b in bits if b) or None
 
@@ -124,7 +127,7 @@ def write_all(outdir, items, latest):
     for key, (label, sel) in sets.items():
         by_upd = sorted(sel, key=lambda p: p["updated_at"], reverse=True)[:MAX_ENTRIES]
         write_feed(os.path.join(outdir, "feed", key + ".xml"), feed_id=f"tag:ossian.cloud,2026:via/feed/{key}",
-                   title=f"Consultazioni ambientali (VIA, AIA) · {label}",
+                   title=f"Consultazioni ambientali (VIA, VAS, AIA) · {label}",
                    subtitle="Procedure aperte alle osservazioni del pubblico sul portale Valutazioni Ambientali del Ministero",
                    self_url=f"{BASE}/feed/{key}.xml", alt_url=f"{BASE}/", updated=latest, rights=RIGHTS,
                    entries=[entry(p) for p in by_upd])
@@ -186,7 +189,7 @@ def write_index(outdir, sets, when, latest_items):
 <html lang="it">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Consultazioni ambientali in feed · ossian.cloud</title>
-<meta name="description" content="Feed Atom e calendari gratuiti delle procedure di VIA e AIA aperte alle osservazioni del pubblico sul portale Valutazioni Ambientali del Ministero, per regione e tipo di opera.">
+<meta name="description" content="Feed Atom e calendari gratuiti delle procedure di VIA, VAS e AIA aperte alle osservazioni del pubblico sul portale Valutazioni Ambientali del Ministero, per regione e tipo di opera.">
 <link rel="alternate" type="application/atom+xml" title="Consultazioni ambientali · Tutta Italia" href="feed/tutte.xml">
 <link rel="stylesheet" href="../style.css"></head>
 <body><main>
@@ -232,7 +235,7 @@ con proponente, luogo e link alla scheda ufficiale. Si aggiorna da solo.</p>
 </tbody></table>
 
 <h2>Per regione</h2>
-<p>La regione è quella indicata nella scheda del progetto; un progetto in più regioni compare in ciascuna. Le opere a mare senza regione compaiono solo in «Tutta Italia».</p>
+<p>La regione è quella indicata nella scheda del progetto; un progetto in più regioni compare in ciascuna. Le opere a mare e le procedure senza localizzazione nella scheda compaiono solo in «Tutta Italia».</p>
 <table>
 <thead><tr><th>Regione</th><th>aperte</th><th>feed</th><th>calendario</th></tr></thead>
 <tbody>
@@ -241,7 +244,7 @@ con proponente, luogo e link alla scheda ufficiale. Si aggiorna da solo.</p>
 
 <h2>Cosa contengono</h2>
 <ul>
-<li>Procedure di VIA, verifica di assoggettabilità a VIA e AIA di competenza statale con consultazione pubblica aperta. Le procedure regionali non sono incluse.</li>
+<li>Procedure di VIA, verifica di assoggettabilità a VIA, VAS e AIA di competenza statale con consultazione pubblica aperta. Le procedure regionali non sono incluse.</li>
 <li>Per ogni procedura: titolo, proponente, tipo di opera, luogo, date, stato, scadenza delle osservazioni e link alla scheda ufficiale. Non riporto documenti né recapiti.</li>
 <li>Se il termine cambia (per esempio per una ripubblicazione) la voce del feed risulta aggiornata.</li>
 <li>Aggiornamento automatico alcune volte al giorno.</li>

@@ -126,9 +126,10 @@ def parse_detail(h):
             "tipologia": f("Tipologia di opera :", "Scadenza|Territori") or f("Tipologia installazione :", "Categoria|Gestore"),
             "regioni": lst(f("Regioni:", "Province")), "province": lst(f("Province:", "Comuni")),
             "comuni": lst(f("Comuni:", "Aree marine")),
-            "avvio": last_date(t, r"Data avvio (?:nuova )?consultazione pubblica|Data comunicazione avvio nuova consultazione pubblica"),
+            "avvio": last_date(t, r"Data avvio (?:nuova )?consultazione pubblica|Data comunicazione avvio nuova consultazione pubblica"
+                                    r"|Data (?:[IVX]+ )?ripubblicazione[^:]{0,60}"),
             "termine": last_date(t, r"Termine (?:per la )?presentazione (?:delle )?osservazioni[^:]*"),
-            "stato": stato[:80] if stato else None}
+            "stato": re.split(r"\s+\d{4,}|\s+\d\d/\d\d/\d{4}", stato)[0][:80] if stato else None}
 
 
 def personal(s):
