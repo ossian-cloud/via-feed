@@ -261,7 +261,9 @@ con proponente, luogo e link alla scheda ufficiale. Si aggiorna da solo.</p>
 
 <h2>Fonte</h2>
 <p>{e(SOURCE)}: <a href="https://va.mite.gov.it">va.mite.gov.it</a>. Sono riportati solo dati di fatto, con il link alla scheda ufficiale.
-Il codice è aperto (licenza MIT).</p>
+Il codice è aperto (licenza MIT): <a href="https://github.com/ossian-cloud/via-feed">github.com/ossian-cloud/via-feed</a>.
+Segnalazioni e correzioni: <a href="https://github.com/ossian-cloud/via-feed/issues">issue su GitHub</a> o
+<a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>.</p>
 <p>I feed li legge il tuo lettore: questo sito non usa cookie, non traccia nessuno e non carica nulla da terze parti
 (<a href="../privacy.html">privacy</a>).</p>
 
