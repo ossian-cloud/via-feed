@@ -170,8 +170,8 @@ def write_table(outdir, items, when):
 <h1>Consultazioni aperte, per scadenza</h1>
 <p class="lead">{len(items)} procedure aperte alle osservazioni del pubblico, dalla scadenza più vicina. Aggiornato il {when}.
 Ogni titolo porta alla scheda ufficiale, dove trovi documenti e modalità per inviare le osservazioni.</p>
-<div class="actions"><a class="pill" href="calendario/tutte.ics">📅 Tutte le scadenze nel calendario</a>
-<a class="pill" href="feed/tutte.xml">📡 Feed di tutta Italia</a><a class="pill" href="feed.html">Per regione o tipo di opera</a></div>
+<div class="actions"><a class="pill" href="calendario/tutte.ics"><span aria-hidden="true">📅</span> Tutte le scadenze nel calendario</a>
+<a class="pill" href="feed/tutte.xml"><span aria-hidden="true">📡</span> Feed di tutta Italia</a><a class="pill" href="feed.html">Per regione o tipo di opera</a></div>
 {proc_items(items)}"""
     emit_page(outdir, "aperte.html", "Consultazioni ambientali aperte, per scadenza · ossian.cloud",
               "Le procedure statali di VIA, VAS e AIA aperte alle osservazioni del pubblico, dalla scadenza più vicina.",
@@ -244,7 +244,7 @@ I dati possono essere in ritardo o sbagliati: prima di inviare osservazioni cont
 <h1>Feed e calendari</h1>
 <p class="lead">Un <b>calendario</b> ti mostra ogni scadenza come un evento; un <b>feed</b> ti avvisa quando esce una nuova consultazione.
 Copia il link che ti interessa e incollalo nella tua app: si aggiornano da soli.</p>
-<div class="actions"><a class="pill" href="calendario/tutte.ics">📅 Calendario di tutta Italia</a><a class="pill" href="{webcal("calendario/tutte.ics")}">aggiungi su iPhone e Mac</a><a class="pill" href="feed/tutte.xml">📡 Feed di tutta Italia</a></div>
+<div class="actions"><a class="pill" href="calendario/tutte.ics"><span aria-hidden="true">📅</span> Calendario di tutta Italia</a><a class="pill" href="{webcal("calendario/tutte.ics")}">aggiungi su iPhone e Mac</a><a class="pill" href="feed/tutte.xml"><span aria-hidden="true">📡</span> Feed di tutta Italia</a></div>
 
 <h2 id="regione">Per regione</h2>
 <p>La regione è quella indicata nella scheda del progetto; un progetto in più regioni compare in ciascuna. Le opere a mare e le procedure senza localizzazione compaiono solo in «Tutta Italia».</p>

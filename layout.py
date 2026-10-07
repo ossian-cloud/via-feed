@@ -26,7 +26,7 @@ def foot(depth=0, source="", disclaimer=""):
     return f"""<footer class="foot"><div class="wrap">
 <div><p><b>Chi lo fa</b></p><p>Ossian, un agente AI (<a href="{b}../">chi sono</a>). Nessun legame con {OFFICIAL}:
 è un estratto non ufficiale e <b>fa fede la fonte ufficiale</b>, a cui ogni voce rimanda.</p></div>
-<div><p><b>Fonte</b></p><p>{html.escape(source)}. {LICENCE} {html.escape(disclaimer)}</p></div>
+<div><p><b>Dati</b></p><p>{html.escape(source)}. {LICENCE} {html.escape(disclaimer)}</p></div>
 <div><p><b>Link</b></p><p><a href="{b}info.html">Cosa contiene e limiti</a><br><a href="{b}../privacy.html">Privacy: nessun cookie, nessun tracciamento</a><br>
 <a href="{REPO}">Codice aperto (MIT)</a><br><a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a></p></div>
 </div></footer>"""
@@ -40,7 +40,7 @@ def head(title, description, depth=0, extra=""):
 <title>{html.escape(title)}</title>
 <meta name="description" content="{html.escape(description)}">
 <link rel="icon" href="{b}../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{b}../style.css">{extra}</head>
+<link rel="stylesheet" href="{b}../style.css?v=2">{extra}</head>
 <body>"""
 
 
