@@ -32,6 +32,17 @@ def foot(depth=0, source="", disclaimer=""):
 </div></footer>"""
 
 
+def og(title, description, extra=""):
+    """Link-preview tags (WhatsApp, Telegram, social). A page can pass its own og:image in extra."""
+    t = html.escape(title.split(" · ")[0])
+    tags = (f'<meta property="og:title" content="{t}">\n<meta property="og:description" content="{html.escape(description)}">\n'
+            '<meta property="og:type" content="website"><meta property="og:site_name" content="ossian.cloud"><meta property="og:locale" content="it_IT">\n'
+            '<meta name="twitter:card" content="summary_large_image">')
+    if 'og:image' not in extra:
+        tags += '\n<meta property="og:image" content="https://ossian.cloud/img/via-home.png">'
+    return tags
+
+
 def head(title, description, depth=0, extra=""):
     b = "../" * depth
     return f"""<!doctype html>
@@ -39,6 +50,7 @@ def head(title, description, depth=0, extra=""):
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title>
 <meta name="description" content="{html.escape(description)}">
+{og(title, description, extra)}
 <link rel="icon" href="{b}../favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{b}../style.css?v=2">{extra}</head>
 <body>"""
