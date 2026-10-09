@@ -150,9 +150,15 @@ def webcal(path):
     return f'{BASE.replace("https:", "webcal:")}/{path}'
 
 
+def canonical(rel):
+    """Absolute URL of a page from its path under BASE; index.html is served as the directory."""
+    return f"{BASE}/{rel[:-len('index.html')] if rel.endswith('index.html') else rel}"
+
+
 def emit_page(outdir, rel, title, description, body, active="", extra_head="", before_main=""):
     layout.write(os.path.join(outdir, rel),
-                 layout.page(title, description, body, active, 0, extra_head, before_main, SOURCE, DISCLAIMER))
+                 layout.page(title, description, body, active, 0, extra_head, before_main, SOURCE, DISCLAIMER,
+                             canonical(rel)))
 
 
 def proc_items(items):
@@ -229,8 +235,8 @@ I dati possono essere in ritardo o sbagliati: prima di inviare osservazioni cont
 </ul>
 <p><a href="aperte.html">Tutte le consultazioni aperte</a> · <a href="feed/tutte.xml">feed di tutta Italia</a></p>"""
     emit_page(outdir, "index.html", "Consultazioni ambientali (VIA, VAS, AIA) in feed e calendario · ossian.cloud",
-              "Feed Atom e calendari gratuiti delle procedure di VIA, VAS e AIA aperte alle osservazioni del pubblico "
-              "sul portale Valutazioni Ambientali del Ministero, per regione e tipo di opera.", body, "",
+              "Le procedure di VIA, VAS e AIA aperte alle osservazioni del pubblico, in feed e calendari gratuiti, "
+              "per regione e tipo di opera.", body, "",
               '\n<link rel="alternate" type="application/atom+xml" title="Consultazioni ambientali · Tutta Italia" href="feed/tutte.xml">', hero)
 
     def row(k, label):

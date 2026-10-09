@@ -1,6 +1,8 @@
 """Page shell for via/: header with navigation, breadcrumbs, footer. One place, every page."""
 import html
+import json
 
+BASE = "https://ossian.cloud/via"
 TITLE = "Consultazioni ambientali"
 TAGLINE = "VIA, VAS e AIA in feed e calendario · di Ossian"
 OFFICIAL = "il Ministero"  # who publishes the official version
@@ -32,27 +34,31 @@ def foot(depth=0, source="", disclaimer=""):
 </div></footer>"""
 
 
-def og(title, description, extra=""):
+def og(title, description, extra="", canonical=""):
     """Link-preview tags (WhatsApp, Telegram, social). A page can pass its own og:image in extra."""
     t = html.escape(title.split(" · ")[0])
     tags = (f'<meta property="og:title" content="{t}">\n<meta property="og:description" content="{html.escape(description)}">\n'
             '<meta property="og:type" content="website"><meta property="og:site_name" content="ossian.cloud"><meta property="og:locale" content="it_IT">\n'
             '<meta name="twitter:card" content="summary_large_image">')
+    if canonical:
+        tags += f'\n<meta property="og:url" content="{html.escape(canonical)}">'
     if 'og:image' not in extra:
         tags += '\n<meta property="og:image" content="https://ossian.cloud/img/via-home.png">'
     return tags
 
 
-def head(title, description, depth=0, extra=""):
+def head(title, description, depth=0, extra="", canonical=""):
+    """canonical: the page's absolute https URL (directories end in '/', never index.html)."""
     b = "../" * depth
     return f"""<!doctype html>
 <html lang="it">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}</title>
+<title>{html.escape(title, quote=False)}</title>
 <meta name="description" content="{html.escape(description)}">
-{og(title, description, extra)}
+{og(title, description, extra, canonical)}
+{f'<link rel="canonical" href="{html.escape(canonical)}">' if canonical else ""}
 <link rel="icon" href="{b}../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{b}../style.css?v=2">{extra}</head>
+<link rel="stylesheet" href="{b}../style.css?v=3">{extra}</head>
 <body>"""
 
 
@@ -63,11 +69,17 @@ def crumbs(items, depth=0):
     for href, label in items[:-1]:
         parts.append(f'<a href="{b}{href}">{html.escape(label)}</a>')
     parts.append(html.escape(items[-1][1]))
-    return '<nav class="crumbs" aria-label="Percorso">' + " › ".join(parts) + "</nav>"
+    # The same path as schema.org BreadcrumbList, so search results can show it instead of the URL.
+    trail = [(BASE + "/", TITLE)] + [(f"{BASE}/{h}", label) for h, label in items[:-1]] + [(None, items[-1][1])]
+    ld = {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+        {"@type": "ListItem", "position": i, "name": label, **({"item": url} if url else {})}
+        for i, (url, label) in enumerate(trail, 1)]}
+    return ('<nav class="crumbs" aria-label="Percorso">' + " › ".join(parts) + "</nav>\n"
+            + '<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
 
 
-def page(title, description, body, active="", depth=0, extra_head="", before_main="", source="", disclaimer=""):
-    return (head(title, description, depth, extra_head) + "\n" + top(active, depth) + "\n" + before_main
+def page(title, description, body, active="", depth=0, extra_head="", before_main="", source="", disclaimer="", canonical=""):
+    return (head(title, description, depth, extra_head, canonical) + "\n" + top(active, depth) + "\n" + before_main
             + f'\n<main id="main" class="wrap">\n{body}\n</main>\n' + foot(depth, source, disclaimer) + "\n</body>\n</html>\n")
 
 
