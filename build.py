@@ -161,12 +161,114 @@ def emit_page(outdir, rel, title, description, body, active="", extra_head="", b
                              canonical(rel)))
 
 
+GRACE_DAYS = 14  # a closed consultation's page stays this long, noindex, then goes
+
+
+def page_rel(p):
+    return f"procedura/{p['id']}.html"
+
+
+def short_title(p):
+    """The project's name without the 'Progetto per la realizzazione di' that most titles start with."""
+    t = " ".join(p["title"].split()).strip('" ')
+    t = re.sub(r"^(progetto|istanza)\s+(definitivo\s+|esecutivo\s+)?((per|relativo a|relativa a)\s+)?"
+               r"(la realizzazione\s+|la costruzione\s+|l'esercizio\s+)?(di|del|della|dello|dell')?\s*", "", t, flags=re.I)
+    t = re.sub(r"^((un|una|uno|il|la|lo)\s+|l')", "", t, flags=re.I)
+    m = re.search(r"\bdenominat[oa]\s+[\"“«]([^\"”»]{2,60})[\"”»]", t)
+    if m:  # 'impianto eolico della potenza di 99,2 MW denominato "Orria" da...' -> 'impianto eolico Orria'
+        kind = re.split(r",|\s+(della|di|con|per una|avente)\s+potenza|\s+compost[oa]|\s+\d", t[:m.start()], flags=re.I)[0].strip()
+        t = f"{kind} {m.group(1).strip()}" if len(kind) <= 50 else m.group(1).strip()
+    return t[:1].upper() + t[1:]
+
+
+def first_comune(p):
+    comuni = [c for c in p.get("comuni", []) if slug(c) not in {slug(x) for x in REGIONS + p.get("province", [])}]
+    return comuni[0] if comuni else None
+
+
+CITIZEN = "https://va.mite.gov.it/it-IT/comunicazione/cittadino"
+
+
+def howto(p):
+    """How to take part, from the Ministry's citizen page (checked 2026-10-09, notes/via-osservazioni-2026-10-09.md).
+    Only what that page says; the law's terms vary by procedure, so the date shown is the portal's."""
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Chiunque abbia interesse può inviare osservazioni scritte al Ministero entro il termine indicato sul portale,
+qui il <b>{day(p["termine_osservazioni"])}</b>. La <a href="{CITIZEN}">pagina del Ministero per i cittadini</a> indica tre modi:</p>
+<ul>
+<li><b>online</b>, con SPID o CIE (il 9 ottobre 2026 il portale segnalava un servizio temporaneamente disabilitato per verifiche di sicurezza: controlla lì);</li>
+<li><b>PEC</b> a <a href="mailto:va@pec.mase.gov.it">va@pec.mase.gov.it</a>;</li>
+<li><b>posta</b> a Ministero dell'Ambiente e della Sicurezza Energetica, Direzione generale valutazioni ambientali, via Cristoforo Colombo 70, 00147 Roma.</li>
+</ul>
+<p>Sulla stessa pagina c'è il modulo da usare. Indica il codice della procedura ({html.escape(p["id"])}) e il nome del progetto.
+Le osservazioni vengono pubblicate sul portale: i dati personali vanno nell'allegato separato previsto dal Ministero, che secondo il Ministero non viene pubblicato.</p>
+<p class="small">Riassunto non ufficiale. Fanno fede l'avviso al pubblico e le indicazioni del Ministero.</p>"""
+
+
+def write_procedure_pages(outdir, procs, today):
+    """One page per consultation that is open or closed less than GRACE_DAYS ago: what it is, where, the
+    deadline, the official page first, and how to take part. Closed ones are noindex. Returns the indexable rels."""
+    e = html.escape
+    os.makedirs(os.path.join(outdir, "procedura"), exist_ok=True)
+    cut = (dt.date.fromisoformat(today) - dt.timedelta(days=GRACE_DAYS)).isoformat()
+    indexable = []
+    for p in procs.values():
+        end = p.get("termine_osservazioni")
+        if not end or end < cut:
+            continue
+        closed = end < today or bool(p.get("closed_at"))
+        regs = regions_of(p)
+        rows = [("Procedura", p["procedure_type"]), ("Proponente", p.get("proponente")), ("Tipologia", p.get("tipologia")),
+                ("Luogo", place(p)), ("Avvio della consultazione", day(p.get("avvio"))),
+                ("Termine per le osservazioni", day(end)), ("Stato sul portale", p.get("stato")),
+                ("Codice sul portale", p["id"])]
+        facts = "\n".join(f"<tr><th>{k}</th><td>{e(v)}</td></tr>" for k, v in rows if v)
+        status = (f'<p class="note"><b>Consultazione chiusa</b> il {day(end)}. La pagina resta per qualche giorno e poi viene tolta.</p>'
+                  if closed else "")
+        follow = [f'<a class="pill" href="../calendario/{slug(r)}.ics"><span aria-hidden="true">📅</span> Scadenze in {e(r)}</a>' for r in regs[:2]]
+        follow += [f'<a class="pill" href="../feed/{slug(r)}.xml"><span aria-hidden="true">📡</span> Feed: {e(r)}</a>' for r in regs[:2]]
+        follow += ['<a class="pill" href="../aperte.html">Tutte le consultazioni aperte</a>']
+        crumb = [("aperte.html", "Consultazioni aperte"), ("", short(short_title(p), 60))]
+        body = f"""{layout.crumbs(crumb, 1)}
+<h1 class="long">{e(short(p["title"], 300).strip('" '))}</h1>
+<p class="lead">{e(type_label(p))}{f" · {e(place(p))}" if place(p) else ""}{"" if closed else f" · osservazioni entro il <b>{day(end)}</b>"}</p>
+{status}
+<div class="cta"><a class="btn" href="{e(p["url"])}">Scheda ufficiale e documenti</a></div>
+<div class="table"><table class="facts"><tbody>
+{facts}
+</tbody></table></div>
+{"" if closed else howto(p)}
+<h2>Altre consultazioni</h2>
+<div class="actions">{"".join(follow)}</div>
+<p class="small">Estratto non ufficiale preparato da un agente AI: i dati possono essere in ritardo o sbagliati. Fa fede la scheda sul portale del Ministero.</p>"""
+        name, c = short_title(p).rstrip("."), first_comune(p)
+        name = short(name, 55) + (f" ({c})" if c and c.lower() not in name.lower() else "")
+        title = f"{name}: osservazioni {type_label(p)} entro il {day(end)}"
+        desc = (f"{p['procedure_type']}" + (f" di {p['proponente']}" if p.get("proponente") else "")
+                + (f", {place(p)}" if place(p) else "") + f". Osservazioni del pubblico entro il {day(end)}.")
+        extra = '\n<meta name="robots" content="noindex">' if closed else ""
+        rel = page_rel(p)
+        layout.write(os.path.join(outdir, rel), layout.page(title, short(desc, 200), body, "aperte.html", 1, extra, "",
+                                                            SOURCE, DISCLAIMER, canonical(rel)))
+        if not closed:
+            indexable.append(rel)
+    return indexable
+
+
+def write_sitemap(outdir, pages):
+    """via/sitemap.xml: the section's pages and one per open consultation (listed in /robots.txt)."""
+    urls = "".join(f"<url><loc>{canonical(r)}</loc></url>\n" for r in ["index.html", "aperte.html", "feed.html", "info.html"] + sorted(pages))
+    with open(os.path.join(outdir, "sitemap.xml"), "w") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                + urls + "</urlset>\n")
+
+
 def proc_items(items):
     e = html.escape
     lis = []
     for p in items:
         meta = ["scade " + day(p["termine_osservazioni"]), type_label(p), p.get("proponente"), place(p)]
-        lis.append(f'<li><a href="{e(p["url"])}">{e(short(p["title"], 200))}</a>'
+        lis.append(f'<li><a href="{e(page_rel(p))}">{e(short(p["title"], 200))}</a>'
                    f'<small>{e(" · ".join(m for m in meta if m))}</small></li>')
     return '<ul class="items">\n' + "\n".join(lis) + "\n</ul>" if lis else "<p>Nessuna consultazione aperta al momento.</p>"
 
@@ -175,7 +277,7 @@ def write_table(outdir, items, when):
     body = f"""{layout.crumbs([("", "Consultazioni aperte")])}
 <h1>Consultazioni aperte, per scadenza</h1>
 <p class="lead">{len(items)} procedure aperte alle osservazioni del pubblico, dalla scadenza più vicina. Aggiornato il {when}.
-Ogni titolo porta alla scheda ufficiale, dove trovi documenti e modalità per inviare le osservazioni.</p>
+Ogni titolo porta a una pagina con i dati essenziali, il link alla scheda ufficiale (documenti e modalità) e come presentare le osservazioni.</p>
 <div class="actions"><a class="pill" href="calendario/tutte.ics"><span aria-hidden="true">📅</span> Tutte le scadenze nel calendario</a>
 <a class="pill" href="feed/tutte.xml"><span aria-hidden="true">📡</span> Feed di tutta Italia</a><a class="pill" href="feed.html">Per regione o tipo di opera</a></div>
 {proc_items(items)}"""
@@ -198,7 +300,7 @@ ma solo per 30 o 60 giorni. Qui le trovi tutte, nel calendario o in un feed. Gra
     nfeeds = len(sets)
     ncal = len([k for k in sets if k not in GROUPS])
     latest = "\n".join(
-        f'<li><a href="{e(p["url"])}">{e(short(p["title"], 160))}</a>'
+        f'<li><a href="{e(page_rel(p))}">{e(short(p["title"], 160))}</a>'
         f'<small>{e(" · ".join(m for m in [p.get("proponente"), type_label(p), "scade " + day(p["termine_osservazioni"])] if m))}</small></li>'
         for p in latest_items)
     body = f"""<div class="stats">
@@ -323,6 +425,7 @@ def main(outdir):
     write_table(outdir, items, when)
     newest = sorted(items, key=lambda p: p["updated_at"], reverse=True)[:15]
     write_index(outdir, sets, when, newest)
+    write_sitemap(outdir, write_procedure_pages(outdir, procs, now.strftime("%Y-%m-%d")))
     print(f"{len(items)} open procedures, {len(sets)} feeds", file=sys.stderr)
 
 
