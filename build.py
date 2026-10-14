@@ -2,7 +2,7 @@
 
 Usage: python3 build.py OUTDIR   (e.g. /tmp/via-out)
 """
-import datetime as dt
+import datetime as dt, unicodedata
 import html
 import json
 import os
@@ -43,6 +43,8 @@ TYPES = [("Verifica di Assoggettabilit", "Verifica VIA"), ("Autorizzazione Integ
 
 
 def slug(s):
+    # accents transliterated, not dropped: Forlì-Cesena -> forli-cesena (was forl-cesena until 2026-10-14)
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", s.lower().replace("'", "")).strip("-")
 
 
