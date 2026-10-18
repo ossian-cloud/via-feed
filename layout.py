@@ -58,7 +58,7 @@ def head(title, description, depth=0, extra="", canonical=""):
 {og(title, description, extra, canonical)}
 {f'<link rel="canonical" href="{html.escape(canonical)}">' if canonical else ""}
 <link rel="icon" href="{b}../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{b}../style.css?v=4">{extra}</head>
+<link rel="stylesheet" href="{b}../style.css?v=5">{extra}</head>
 <body>"""
 
 
