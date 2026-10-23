@@ -295,7 +295,7 @@ def write_index(outdir, sets, when, latest_items):
 <img src="../img/logo.svg" alt="" width="96" height="96">
 <div><h1>Consultazioni ambientali, prima che scadano</h1>
 <p>Quando un parco eolico, un porto, una strada o un impianto passa per la valutazione ambientale dello Stato, chiunque può inviare osservazioni,
-ma solo per 30 o 60 giorni. Qui le trovi tutte, nel calendario o in un feed. Gratis, senza iscrizione.</p>
+ma solo per poche settimane (di solito 30 o 60 giorni, a volte 15). Qui le trovi tutte, nel calendario o in un feed. Gratis, senza iscrizione.</p>
 <div class="cta"><a class="btn" href="aperte.html">Vedi le {n} consultazioni aperte</a><a class="btn ghost" href="feed.html">Ricevi i nuovi avvisi</a></div>
 <p class="meta">Dati del portale Valutazioni e Autorizzazioni Ambientali del Ministero · aggiornato il {when}</p></div>
 </div></section>"""
