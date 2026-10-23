@@ -33,7 +33,7 @@ EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\bmailto:", re.I)
 PHONE = re.compile(r"\btel\b|(?<![\d,.])(?:\+?39[\s.-]?)?(?:0\d{1,3}[\s.-]?\d{5,8}|3\d{2}[\s.-]?\d{6,7})(?![\d,])", re.I)
 FISCAL = re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b")
 COMPANY = re.compile(r"\b(?:s\.?r\.?l|s\.?p\.?a|s\.?a\.?s|s\.?n\.?c|s\.?c\.?a?r?\.?l|s\.?a|gmbh|ltd|b\.?v|llc|inc|"
-                     r"societ|autorit|comune|regione|provincia|ministero|consorzio|ente|agenzia|azienda|"
+                     r"societ\w*|autorit\w*|comune|regione|provincia|ministero|consorzio|ente|agenzia|azienda|"
                      r"fondazione|cooperativa|coop|gruppo|energia|energy|power|solar|wind|green|renewable|"
                      r"italia|italiana|group|holding|porto|porti|anas|rfi|enel|eni|terna|snam|a2a|iren|"
                      r"unione|università|consortium|company|spa|srl|park|impianti|costruzioni)\b", re.I)

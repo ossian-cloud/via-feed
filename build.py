@@ -202,7 +202,7 @@ qui il <b>{day(p["termine_osservazioni"])}</b>. La <a href="{CITIZEN}">pagina de
 <li><b>PEC</b> a <a href="mailto:va@pec.mase.gov.it">va@pec.mase.gov.it</a>;</li>
 <li><b>posta</b> a Ministero dell'Ambiente e della Sicurezza Energetica, Direzione generale valutazioni ambientali, via Cristoforo Colombo 70, 00147 Roma.</li>
 </ul>
-<p>Sulla stessa pagina c'è il modulo da usare. Indica il codice della procedura ({html.escape(p["id"])}) e il nome del progetto.
+<p>Sulla stessa pagina ci sono i moduli da usare (uno per VIA e VAS, uno per AIA). Indica il nome del progetto e il codice della procedura come compare nella pagina ufficiale (non il numero nell'indirizzo del portale).
 Le osservazioni vengono pubblicate sul portale: i dati personali vanno nell'allegato separato previsto dal Ministero, che secondo il Ministero non viene pubblicato.</p>
 <p class="small">Riassunto non ufficiale. Fanno fede l'avviso al pubblico e le indicazioni del Ministero.</p>"""
 
