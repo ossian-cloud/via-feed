@@ -104,13 +104,15 @@ def parse_avvisi(h):
     return out
 
 
-def last_date(t, label):
-    # multi-round procedures repeat these labels; the newest round is the open one
+def last_date(t, label, until=None):
+    # multi-round procedures repeat these labels; the newest round is the open one.
+    # AIA pages hold several procedures: a start after the open one's deadline belongs to another
     ds = [iso(x) for x in re.findall(r"(?:" + label + r")\s*:\s*(\d\d/\d\d/\d{4})", t, re.I)]
+    ds = [x for x in ds if not until or x <= until]
     return max(ds) if ds else None
 
 
-def parse_detail(h):
+def parse_detail(h, termine=None):
     t = clean(re.sub(r"(?s)<(script|style).*?</\1>", "", h))
 
     def f(label, stop):
@@ -127,7 +129,7 @@ def parse_detail(h):
             "regioni": lst(f("Regioni:", "Province")), "province": lst(f("Province:", "Comuni")),
             "comuni": lst(f("Comuni:", "Aree marine")),
             "avvio": last_date(t, r"Data avvio (?:nuova )?consultazione pubblica|Data comunicazione avvio nuova consultazione pubblica"
-                                    r"|Data (?:[IVX]+ )?ripubblicazione[^:]{0,60}"),
+                                    r"|Data (?:[IVX]+ )?ripubblicazione[^:]{0,60}", termine),
             "termine": last_date(t, r"Termine (?:per la )?presentazione (?:delle )?osservazioni[^:]*"),
             "stato": re.split(r"\s+\d{4,}|\s+\d\d/\d\d/\d{4}", stato)[0][:80] if stato else None}
 
@@ -208,7 +210,7 @@ def run(cache, max_detail):
     try:
         for pid in todo[:max_detail]:
             x = seen[pid]
-            d = {k: v for k, v in parse_detail(fetch_detail(pid, cache)).items() if v}
+            d = {k: v for k, v in parse_detail(fetch_detail(pid, cache), x["termine"]).items() if v}
             old = procs.get(pid, {})
             rec = {"id": pid, "url": f"{BASE}/it-IT/Oggetti/Info/{pid}", "procedure_type": x["procedure_type"],
                    "tipologia": d.get("tipologia") or x["tipologia"], "title": d.get("title") or x["title"],
