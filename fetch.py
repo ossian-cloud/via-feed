@@ -129,7 +129,8 @@ def parse_detail(h, termine=None):
             "regioni": lst(f("Regioni:", "Province")), "province": lst(f("Province:", "Comuni")),
             "comuni": lst(f("Comuni:", "Aree marine")),
             "avvio": last_date(t, r"Data avvio (?:nuova )?consultazione pubblica|Data comunicazione avvio nuova consultazione pubblica"
-                                    r"|Data (?:[IVX]+ )?ripubblicazione[^:]{0,60}", termine),
+                                    r"|Data (?:[IVX]+ )?ripubblicazione[^:]{0,60}"
+                                    r"|Data pubblicazione avviso sul sito web dell.autorit\w* competente", termine),
             "termine": last_date(t, r"Termine (?:per la )?presentazione (?:delle )?osservazioni[^:]*"),
             "stato": re.split(r"\s+\d{4,}|\s+\d\d/\d\d/\d{4}", stato)[0][:80] if stato else None}
 
