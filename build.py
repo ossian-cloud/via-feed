@@ -11,11 +11,13 @@ import sys
 import zoneinfo
 
 import layout
+from sigle import SIGLA_REGION
 from atom import write_feed
 from ics import write_calendar
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
+PORTAL = os.path.join(HERE, "data", "portal.json")
 BASE = "https://ossian.cloud/via"
 SOURCE = ("Fonte: Ministero dell'Ambiente e della Sicurezza Energetica, "
           "portale Valutazioni Ambientali (va.mite.gov.it)")
@@ -72,7 +74,11 @@ def group_of(p):
 
 def regions_of(p):
     by_slug = {slug(r): r for r in REGIONS}
-    return sorted({by_slug.get(slug(r), r) for r in p.get("regioni", [])})
+    regs = sorted({by_slug.get(slug(r), r) for r in p.get("regioni", [])})
+    if not regs:  # "Nessuna regione" on the portal, but a title like "... Settimo Milanese (MI)"
+        regs = sorted({SIGLA_REGION[m] for m in re.findall(r"\(([A-Z]{2})\)", p["title"] + " " + (p.get("progetto") or ""))
+                       if m in SIGLA_REGION})
+    return regs
 
 
 def place(p):
@@ -84,14 +90,25 @@ def place(p):
     return " · ".join(b for b in bits if b) or None
 
 
+def where(p):
+    c = first_comune(p)
+    return c or (p.get("province") and "prov. " + p["province"][0]) or ", ".join(regions_of(p)[:2]) or None
+
+
+def rounds_text(p):
+    return "; ".join(f"dal {day(a)} al {day(d)}" if a else f"fino al {day(d)}" for a, d in p.get("rounds") or [])
+
+
 def entry(p):
     e = html.escape
-    rows = [("Procedura", p["procedure_type"]), ("Proponente", p.get("proponente")),
+    rows = [("Procedura", p["procedure_type"]), ("Progetto", p.get("progetto")), ("Proponente", p.get("proponente")),
             ("Tipologia", p.get("tipologia")), ("Luogo", place(p)),
             ("Avvio consultazione", day(p.get("avvio"))),
-            ("Termine osservazioni", day(p["termine_osservazioni"])), ("Stato", p.get("stato"))]
+            ("Termine osservazioni", day(p["termine_osservazioni"])), ("Consultazioni aperte", rounds_text(p)),
+            ("Codice procedura", p.get("id_vip")), ("Stato", p.get("stato"))]
     parts = [f"<p>{e(p['title'])}</p>", "<ul>"] + [f"<li><b>{k}:</b> {e(v)}</li>" for k, v in rows if v] + ["</ul>"]
-    parts.append(f'<p><a href="{e(p["url"])}">Scheda ufficiale sul portale del Ministero</a></p>')
+    parts.append(f'<p><a href="{BASE}/{page_rel(p)}">Come presentare le osservazioni</a> · '
+                 f'<a href="{e(p["url"])}">Scheda ufficiale sul portale del Ministero</a></p>')
     parts.append(f"<p><small>{e(SOURCE)}. {e(DISCLAIMER)}</small></p>")
     upd = p["updated_at"]
     avvio = p.get("avvio")
@@ -99,18 +116,23 @@ def entry(p):
     cats = [("tipo:" + slug(type_label(p)), type_label(p)), ("gruppo:" + group_of(p), p.get("tipologia") or "Altro")]
     cats += [("regione:" + slug(r), r) for r in regions_of(p)]
     return {"id": f"tag:ossian.cloud,2026:via/{p['id']}",
-            "title": f"[{type_label(p)}] {short(p['title'], 200)} (osservazioni entro il {day(p['termine_osservazioni'])})",
-            "link": p["url"], "published": min(pub, upd), "updated": upd,
+            "title": f"[{type_label(p)}] {short(short_title(p), 110)}{f' · {where(p)}' if where(p) else ''}"
+                     f" · osservazioni entro il {day(p['termine_osservazioni'])}",
+            "link": f"{BASE}/{page_rel(p)}", "published": min(pub, upd), "updated": upd,
             "summary_html": "".join(parts), "categories": cats}
 
 
 def event(p):
-    lines = [p["title"], f"Proponente: {p['proponente']}" if p.get("proponente") else None,
+    lines = [p["title"], f"Avvio consultazione: {day(p['avvio'])}" if p.get("avvio") else None,
+             f"Consultazioni aperte: {rounds_text(p)}" if p.get("rounds") else None,
+             f"Codice procedura: {p['id_vip']}" if p.get("id_vip") else None,
+             f"Proponente: {p['proponente']}" if p.get("proponente") else None,
              f"Procedura: {p['procedure_type']}", f"Tipologia: {p['tipologia']}" if p.get("tipologia") else None,
-             f"Luogo: {place(p)}" if place(p) else None, f"Scheda ufficiale: {p['url']}", SOURCE + ".", DISCLAIMER]
+             f"Luogo: {place(p)}" if place(p) else None, f"Come presentare le osservazioni: {BASE}/{page_rel(p)}",
+             f"Scheda ufficiale: {p['url']}", SOURCE + ".", DISCLAIMER]
     return {"uid": f"via-{p['id']}@ossian.cloud", "date": p["termine_osservazioni"], "stamp": p["updated_at"],
-            "summary": "Osservazioni: " + short(p["title"], 150), "description": "\n".join(l for l in lines if l),
-            "url": p["url"]}
+            "summary": "Osservazioni: " + short(short_title(p), 80) + (f" · {where(p)}" if where(p) else ""),
+            "description": "\n".join(l for l in lines if l), "url": f"{BASE}/{page_rel(p)}", "alarm": "-P7D"}
 
 
 def open_procedures(procs, today):
@@ -189,22 +211,37 @@ def first_comune(p):
 
 
 CITIZEN = "https://va.mite.gov.it/it-IT/comunicazione/cittadino"
+REGIONAL = "https://va.mite.gov.it/it-IT/Collegamenti/Regioni"
 
 
-def howto(p):
+def portal_state():
+    try:
+        return json.load(open(PORTAL, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def howto(p, portal):
     """How to take part, from the Ministry's citizen page (checked 2026-10-09, notes/via-osservazioni-2026-10-09.md).
     Only what that page says; the law's terms vary by procedure, so the date shown is the portal's."""
     return f"""<h2>Come presentare le osservazioni</h2>
 <p>Chiunque abbia interesse può inviare osservazioni scritte al Ministero entro il termine indicato sul portale,
 qui il <b>{day(p["termine_osservazioni"])}</b>. La <a href="{CITIZEN}">pagina del Ministero per i cittadini</a> indica tre modi:</p>
 <ul>
-<li><b>online</b>, con SPID o CIE (il 9 ottobre 2026 il portale segnalava un servizio temporaneamente disabilitato per verifiche di sicurezza: controlla lì);</li>
+<li><b>online</b>, con SPID o CIE{online_note(portal)};</li>
 <li><b>PEC</b> a <a href="mailto:va@pec.mase.gov.it">va@pec.mase.gov.it</a>;</li>
 <li><b>posta</b> a Ministero dell'Ambiente e della Sicurezza Energetica, Direzione generale valutazioni ambientali, via Cristoforo Colombo 70, 00147 Roma.</li>
 </ul>
-<p>Sulla stessa pagina ci sono i moduli da usare (uno per VIA e VAS, uno per AIA). Indica il nome del progetto e il codice della procedura come compare nella pagina ufficiale (non il numero nell'indirizzo del portale).
+<p>Sulla stessa pagina ci sono i moduli da usare (uno per VIA e VAS, uno per AIA). Indica il nome del progetto e il codice della procedura{f" (<b>{html.escape(p['id_vip'])}</b>)" if p.get("id_vip") else ", come compare nella scheda ufficiale"}, non il numero nell'indirizzo del portale.
 Le osservazioni vengono pubblicate sul portale: i dati personali vanno nell'allegato separato previsto dal Ministero, che secondo il Ministero non viene pubblicato.</p>
 <p class="small">Riassunto non ufficiale. Fanno fede l'avviso al pubblico e le indicazioni del Ministero.</p>"""
+
+
+def online_note(portal):
+    if portal.get("online_disabled"):
+        return (f" (il {day(portal['checked'])} il portale segnalava ancora, come dal 9 ottobre, il servizio online "
+                "temporaneamente disabilitato per verifiche di sicurezza: controlla lì)")
+    return ""
 
 
 def write_procedure_pages(outdir, procs, today):
@@ -214,32 +251,42 @@ def write_procedure_pages(outdir, procs, today):
     os.makedirs(os.path.join(outdir, "procedura"), exist_ok=True)
     cut = (dt.date.fromisoformat(today) - dt.timedelta(days=GRACE_DAYS)).isoformat()
     indexable = []
+    portal = portal_state()
     for p in procs.values():
         end = p.get("termine_osservazioni")
         if not end or end < cut:
             continue
         closed = end < today or bool(p.get("closed_at"))
         regs = regions_of(p)
-        rows = [("Procedura", p["procedure_type"]), ("Proponente", p.get("proponente")), ("Tipologia", p.get("tipologia")),
+        rows = [("Procedura", p["procedure_type"]), ("Codice procedura (ID_VIP/ID_MATTM)", p.get("id_vip")),
+                ("Progetto", p.get("progetto")), ("Proponente", p.get("proponente")), ("Tipologia", p.get("tipologia")),
                 ("Luogo", place(p)), ("Avvio della consultazione", day(p.get("avvio"))),
-                ("Termine per le osservazioni", day(end)), ("Stato sul portale", p.get("stato")),
-                ("Codice sul portale", p["id"])]
+                ("Termine per le osservazioni", day(end)), ("Consultazioni aperte", rounds_text(p)),
+                ("Nota sul portale", p.get("note")), ("Stato sul portale", p.get("stato"))]
         facts = "\n".join(f"<tr><th>{k}</th><td>{e(v)}</td></tr>" for k, v in rows if v)
         status = (f'<p class="note"><b>Consultazione chiusa</b> il {day(end)}. La pagina resta per qualche giorno e poi viene tolta.</p>'
                   if closed else "")
+        if p.get("rounds") and not closed:
+            status += (f'<p class="note"><b>Su questa procedura sono aperte {len(p["rounds"])} consultazioni</b> con scadenze diverse '
+                       f'({e(rounds_text(p))}). Qui uso la più vicina. Controlla sulla scheda ufficiale a quali documenti si riferisce ciascuna.</p>')
+        if p.get("progetto") and not closed:
+            status += ('<p class="note">La scheda ufficiale riguarda più procedure. Quella aperta alle osservazioni ha l\'oggetto '
+                       f'indicato nel titolo qui sopra; il progetto della scheda è «{e(short(p["progetto"], 200))}».</p>')
         follow = [f'<a class="pill" href="../calendario/{slug(r)}.ics"><span aria-hidden="true">📅</span> Scadenze in {e(r)}</a>' for r in regs[:2]]
         follow += [f'<a class="pill" href="../feed/{slug(r)}.xml"><span aria-hidden="true">📡</span> Feed: {e(r)}</a>' for r in regs[:2]]
         follow += ['<a class="pill" href="../aperte.html">Tutte le consultazioni aperte</a>']
         crumb = [("aperte.html", "Consultazioni aperte"), ("", short(short_title(p), 60))]
+        h1 = short(p["title"], 300)
+        h1 = h1.strip('" ') if h1.count('"') % 2 else h1  # a stray quote, not a quoted name
         body = f"""{layout.crumbs(crumb, 1)}
-<h1 class="long">{e(short(p["title"], 300).strip('" '))}</h1>
+<h1 class="long">{e(h1)}</h1>
 <p class="lead">{e(type_label(p))}{f" · {e(place(p))}" if place(p) else ""}{"" if closed else f" · osservazioni entro il <b>{day(end)}</b>"}</p>
 {status}
 <div class="cta"><a class="btn" href="{e(p["url"])}">Scheda ufficiale e documenti</a></div>
 <div class="table"><table class="facts"><tbody>
 {facts}
 </tbody></table></div>
-{"" if closed else howto(p)}
+{"" if closed else howto(p, portal)}
 <h2>Altre consultazioni</h2>
 <div class="actions">{"".join(follow)}</div>
 <p class="small">Estratto non ufficiale preparato da un agente AI: i dati possono essere in ritardo o sbagliati. Fa fede la scheda sul portale del Ministero.</p>"""
@@ -269,10 +316,35 @@ def proc_items(items):
     e = html.escape
     lis = []
     for p in items:
-        meta = ["scade " + day(p["termine_osservazioni"]), type_label(p), p.get("proponente"), place(p)]
+        meta = ["scade " + day(p["termine_osservazioni"]), p.get("avvio") and "avviata il " + day(p["avvio"]),
+                type_label(p), p.get("proponente"), place(p)]
         lis.append(f'<li><a href="{e(page_rel(p))}">{e(short(p["title"], 200))}</a>'
                    f'<small>{e(" · ".join(m for m in meta if m))}</small></li>')
     return '<ul class="items">\n' + "\n".join(lis) + "\n</ul>" if lis else "<p>Nessuna consultazione aperta al momento.</p>"
+
+
+NOT_HERE = (f'<p class="note"><b>Non trovi il tuo comune?</b> Qui ci sono solo le procedure di competenza dello Stato. '
+            f'Molti impianti e opere (tanti parchi eolici e fotovoltaici, strade, cave, impianti) li valuta la Regione: '
+            f'cerca sul portale VIA della tua Regione, dall\'<a href="{REGIONAL}">elenco del Ministero</a>.</p>')
+FILTER = """<p class="filter"><label for="q">Cerca un comune, una provincia o un proponente</label>
+<input id="q" type="search" autocomplete="off" placeholder="es. Rozzano, Foggia, eolico"></p>
+<p id="none" class="small" hidden>Nessuna consultazione aperta contiene queste parole.</p>"""
+FILTER_JS = """<script>
+(function () {
+  var q = document.getElementById("q"), none = document.getElementById("none"),
+      items = Array.prototype.slice.call(document.querySelectorAll("ul.items > li"));
+  function norm(s) { return s.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, ""); }
+  var texts = items.map(function (li) { return norm(li.textContent); });
+  q.addEventListener("input", function () {
+    var words = norm(q.value).split(/\\s+/).filter(Boolean), shown = 0;
+    items.forEach(function (li, i) {
+      var ok = words.every(function (w) { return texts[i].indexOf(w) >= 0; });
+      li.hidden = !ok; if (ok) shown++;
+    });
+    none.hidden = shown > 0;
+  });
+})();
+</script>"""
 
 
 def write_table(outdir, items, when):
@@ -282,7 +354,10 @@ def write_table(outdir, items, when):
 Ogni titolo porta a una pagina con i dati essenziali, il link alla scheda ufficiale (documenti e modalità) e come presentare le osservazioni.</p>
 <div class="actions"><a class="pill" href="calendario/tutte.ics"><span aria-hidden="true">📅</span> Tutte le scadenze nel calendario</a>
 <a class="pill" href="feed/tutte.xml"><span aria-hidden="true">📡</span> Feed di tutta Italia</a><a class="pill" href="feed.html">Per regione o tipo di opera</a></div>
-{proc_items(items)}"""
+{FILTER}
+{proc_items(items)}
+{NOT_HERE}
+{FILTER_JS}"""
     emit_page(outdir, "aperte.html", "Consultazioni ambientali aperte, per scadenza · ossian.cloud",
               "Le procedure statali di VIA, VAS e AIA aperte alle osservazioni del pubblico, dalla scadenza più vicina.",
               body, "aperte.html")
@@ -295,7 +370,7 @@ def write_index(outdir, sets, when, latest_items):
 <img src="../img/logo.svg" alt="" width="96" height="96">
 <div><h1>Consultazioni ambientali, prima che scadano</h1>
 <p>Quando un parco eolico, un porto, una strada o un impianto passa per la valutazione ambientale dello Stato, chiunque può inviare osservazioni,
-ma solo per poche settimane (da 15 a 60 giorni, secondo la procedura). Qui le trovi tutte, nel calendario o in un feed. Gratis, senza iscrizione.</p>
+ma solo per poche settimane (da 15 a 60 giorni, secondo la procedura). Qui trovi tutte quelle di competenza statale, nel calendario o in un feed. Gratis, senza iscrizione.</p>
 <div class="cta"><a class="btn" href="aperte.html">Vedi le {n} consultazioni aperte</a><a class="btn ghost" href="feed.html">Ricevi i nuovi avvisi</a></div>
 <p class="meta">Dati del portale Valutazioni e Autorizzazioni Ambientali del Ministero · aggiornato il {when}</p></div>
 </div></section>"""
@@ -303,7 +378,7 @@ ma solo per poche settimane (da 15 a 60 giorni, secondo la procedura). Qui le tr
     ncal = len([k for k in sets if k not in GROUPS])
     latest = "\n".join(
         f'<li><a href="{e(page_rel(p))}">{e(short(p["title"], 160))}</a>'
-        f'<small>{e(" · ".join(m for m in [p.get("proponente"), type_label(p), "scade " + day(p["termine_osservazioni"])] if m))}</small></li>'
+        f'<small>{e(" · ".join(m for m in [p.get("avvio") and "avviata il " + day(p["avvio"]), place(p), type_label(p), "scade " + day(p["termine_osservazioni"])] if m))}</small></li>'
         for p in latest_items)
     body = f"""<div class="stats">
 <div><b>{n}</b><span>consultazioni aperte ora</span></div>
@@ -333,7 +408,7 @@ possono invece ricevere le nuove consultazioni della propria regione appena esco
 I dati possono essere in ritardo o sbagliati: prima di inviare osservazioni controlla termini e modalità sulla scheda ufficiale, a cui ogni voce rimanda.
 <a href="info.html">Cosa contiene e limiti</a>.</p></div>
 
-<h2>Ultime consultazioni pubblicate o aggiornate</h2>
+<h2>Consultazioni avviate di recente</h2>
 <ul class="items">
 {latest}
 </ul>
@@ -344,8 +419,8 @@ I dati possono essere in ritardo o sbagliati: prima di inviare osservazioni cont
               '\n<link rel="alternate" type="application/atom+xml" title="Consultazioni ambientali · Tutta Italia" href="feed/tutte.xml">', hero)
 
     def row(k, label):
-        return (f'<tr><td>{e(label)}</td><td class="n">{num_open(sets, k)}</td><td><a href="feed/{k}.xml">feed</a></td>'
-                f'<td><a href="calendario/{k}.ics">calendario</a></td><td><a href="{webcal(f"calendario/{k}.ics")}">aggiungi</a></td></tr>')
+        return (f'<tr><td>{e(label)}</td><td class="n">{num_open(sets, k)}</td><td><a href="feed/{k}.xml">feed</a> · '
+                f'<a href="calendario/{k}.ics">calendario</a> · <a href="{webcal(f"calendario/{k}.ics")}">iPhone/Mac</a></td></tr>')
 
     regs = "\n".join(row(slug(r), r) for r in REGIONS)
     groups = "\n".join(f'<tr><td>{e(lab)}</td><td class="n">{num_open(sets, k)}</td><td><a href="feed/{k}.xml">feed</a></td></tr>'
@@ -357,8 +432,8 @@ Copia il link che ti interessa e incollalo nella tua app: si aggiornano da soli.
 <div class="actions"><a class="pill" href="calendario/tutte.ics"><span aria-hidden="true">📅</span> Calendario di tutta Italia</a><a class="pill" href="{webcal("calendario/tutte.ics")}">aggiungi su iPhone e Mac</a><a class="pill" href="feed/tutte.xml"><span aria-hidden="true">📡</span> Feed di tutta Italia</a></div>
 
 <h2 id="regione">Per regione</h2>
-<p>La regione è quella indicata nella scheda del progetto; un progetto in più regioni compare in ciascuna. Le opere a mare e le procedure senza localizzazione compaiono solo in «Tutta Italia».</p>
-<div class="table"><table><thead><tr><th>Regione</th><th>Aperte</th><th>Feed</th><th>Calendario</th><th>iPhone e Mac</th></tr></thead><tbody>
+<p>La regione è quella indicata nella scheda del progetto; un progetto in più regioni compare in ciascuna. Se la scheda non indica la regione ma il titolo ha la sigla della provincia, per esempio «(MI)», uso quella. Le opere a mare e le procedure senza localizzazione compaiono solo in «Tutta Italia».</p>
+<div class="table"><table><thead><tr><th>Regione</th><th>Aperte</th><th>Feed e calendario</th></tr></thead><tbody>
 {regs}
 </tbody></table></div>
 
@@ -375,7 +450,7 @@ Copia il link che ti interessa e incollalo nella tua app: si aggiornano da soli.
 <div class="card"><h3>Thunderbird</h3><p><b>Nuovo calendario → Sulla rete</b>, incolla l'indirizzo.</p></div>
 </div>
 <p class="small">L'indirizzo è quello completo, per esempio <code>{BASE}/calendario/puglia.ics</code>. Le app aggiornano gli abbonamenti con i loro tempi: un avviso nuovo può comparire con qualche ora di ritardo.
-Ogni evento dura un giorno, alla scadenza delle osservazioni, con proponente, luogo e link alla scheda ufficiale.</p>
+Ogni evento dura un giorno, alla scadenza delle osservazioni, con proponente, luogo e link alla scheda ufficiale, e ha un promemoria una settimana prima (alcune app ignorano i promemoria dei calendari in abbonamento).</p>
 
 <h2 id="email">Un feed per email o in un lettore</h2>
 <p>Servizi come <a href="https://feedrabbit.com/">Feedrabbit</a> o <a href="https://blogtrottr.com/">Blogtrottr</a> leggono un feed e ti mandano le novità per email:
@@ -418,6 +493,10 @@ Segnalazioni e correzioni: <a href="https://github.com/ossian-cloud/via-feed/iss
 
 def main(outdir):
     procs = json.load(open(DATA, encoding="utf-8"))
+    for p in procs.values():
+        o = p.get("oggetto")
+        if o and slug(o) not in slug(p["title"]) and slug(p["title"]) not in slug(o):
+            p["progetto"], p["title"] = p["title"], o
     now = dt.datetime.now(ROME)
     items = open_procedures(procs, now.strftime("%Y-%m-%d"))
     os.makedirs(outdir, exist_ok=True)
@@ -425,7 +504,7 @@ def main(outdir):
     sets = write_all(outdir, items, latest)
     when = now.strftime("%d/%m/%Y alle %H:%M")
     write_table(outdir, items, when)
-    newest = sorted(items, key=lambda p: p["updated_at"], reverse=True)[:15]
+    newest = sorted(items, key=lambda p: (p.get("avvio") or p["first_seen"], p["id"]), reverse=True)[:15]
     write_index(outdir, sets, when, newest)
     write_sitemap(outdir, write_procedure_pages(outdir, procs, now.strftime("%Y-%m-%d")))
     print(f"{len(items)} open procedures, {len(sets)} feeds", file=sys.stderr)

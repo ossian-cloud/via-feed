@@ -26,6 +26,7 @@ KEEP_CLOSED_DAYS = 60
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
 BLOCKED = os.path.join(HERE, "data", "BLOCKED")
+PORTAL = os.path.join(HERE, "data", "portal.json")
 BLOCKLIST = os.path.join(HERE, "blocklist.txt")  # ids removed on request, one per line
 VIA = "Valutazione Impatto Ambientale"
 
@@ -104,6 +105,12 @@ def parse_avvisi(h):
     return out
 
 
+START = (r"Data avvio (?:nuova )?consultazione pubblica|Data comunicazione avvio nuova consultazione pubblica"
+         r"|Data (?:[IVX]+ )?ripubblicazione[^:]{0,60}"
+         r"|Data pubblicazione avviso sul sito web dell.autorit\w* competente")
+END = r"Termine (?:per la )?presentazione (?:delle )?osservazioni[^:]*"
+
+
 def last_date(t, label, until=None):
     # multi-round procedures repeat these labels; the newest round is the open one.
     # AIA pages hold several procedures: a start after the open one's deadline belongs to another
@@ -112,27 +119,66 @@ def last_date(t, label, until=None):
     return max(ds) if ds else None
 
 
-def parse_detail(h, termine=None):
-    t = clean(re.sub(r"(?s)<(script|style).*?</\1>", "", h))
+def rounds(t):
+    """(start, deadline) of each consultation round in page order: a deadline pairs with the start just before it."""
+    out, start = [], None
+    for m in re.finditer(r"(" + START + "|" + END + r")\s*:\s*(\d\d/\d\d/\d{4})", t, re.I):
+        if re.match(END, m[1], re.I):
+            out.append((start, iso(m[2])))
+            start = None
+        else:
+            start = iso(m[2])
+    return out
 
-    def f(label, stop):
-        m = re.search(label + r"\s*:?\s*(.*?)\s*(?:" + stop + ")", t)
+
+def procedure_block(t, termini):
+    """A project page can hold several procedures (a VIA, a later screening, compliance checks), each in a block
+    starting at 'Codice procedura (ID_VIP/ID_MATTM)'. The open one is the block with a listed deadline.
+    Returns (id_vip, block text), or (None, None) when no block matches (AIA pages carry no deadline)."""
+    for b in re.split(r"Codice procedura \(ID_VIP/ID_MATTM\)\s*", t)[1:]:
+        if termini & {d for _, d in rounds(b)}:
+            m = re.match(r"(\d+(?:/\d+)?)", b)
+            return (m[1] if m else None), b
+    return None, None
+
+
+def parse_detail(h, termini=()):
+    """termini: the deadlines the listings show for this page (two when two rounds are open at once)."""
+    t = clean(re.sub(r"(?s)<(script|style).*?</\1>", "", h))
+    termini = set(termini)
+    id_vip, blk = procedure_block(t, termini)
+    src = blk or t
+
+    def f(label, stop, text=t):
+        m = re.search(label + r"\s*:?\s*(.*?)\s*(?:" + stop + ")", text)
         return m[1].strip() or None if m else None
 
     def lst(s):
         return [x.strip() for x in (s or "").split(",") if x.strip() and not x.startswith("Nessun")]
 
-    stato = f("Stato procedura:", r"Aggiornamento|Riesame|Rinnovo|Valutazione|Verifica di|Autorizzazione|Comunic-Azione|Dettagli|Data |Note|$")
-    return {"title": f("Progetto :", "Proponente|Tipologia") or f("Installazione :", "Localizzazione|Tipologia"),
-            "proponente": f("Proponente :", "Tipologia di opera|Scadenza|Territori") or f("Gestore :", "Codice Fiscale|Stato installazione"),
-            "tipologia": f("Tipologia di opera :", "Scadenza|Territori") or f("Tipologia installazione :", "Categoria|Gestore"),
-            "regioni": lst(f("Regioni:", "Province")), "province": lst(f("Province:", "Comuni")),
-            "comuni": lst(f("Comuni:", "Aree marine")),
-            "avvio": last_date(t, r"Data avvio (?:nuova )?consultazione pubblica|Data comunicazione avvio nuova consultazione pubblica"
-                                    r"|Data (?:[IVX]+ )?ripubblicazione[^:]{0,60}"
-                                    r"|Data pubblicazione avviso sul sito web dell.autorit\w* competente", termine),
-            "termine": last_date(t, r"Termine (?:per la )?presentazione (?:delle )?osservazioni[^:]*"),
-            "stato": re.split(r"\s+\d{4,}|\s+\d\d/\d\d/\d{4}", stato)[0][:80] if stato else None}
+    stato = f("Stato procedura:", r"Aggiornamento|Riesame|Rinnovo|Valutazione|Verifica di|Autorizzazione|Definizione contenuti|Comunic-Azione|Dettagli|Data |Note|$", src)
+    out = {"title": f("Progetto :", "Descrizione :|Proponente|Tipologia") or f("Installazione :", "Localizzazione|Tipologia"),
+           "proponente": f("Proponente :", "Tipologia di opera|Scadenza|Territori") or f("Gestore :", "Codice Fiscale|Stato installazione"),
+           "tipologia": f("Tipologia di opera :", "Scadenza|Territori") or f("Tipologia installazione :", "Categoria|Gestore"),
+           "regioni": lst(f("Regioni:", "Province")), "province": lst(f("Province:", "Comuni")),
+           "comuni": lst(f("Comuni:", "Aree marine")),
+           "avvio": last_date(src, START, min(termini) if termini else None),
+           "termine": last_date(t, END),
+           "stato": re.split(r"\s+\d{4,}|\s+\d\d/\d\d/\d{4}", stato)[0][:80] if stato else None}
+    if blk:
+        by_end = {}  # deadline -> start; a repeated deadline is one round
+        for a, d in rounds(blk):
+            if d in termini:
+                by_end[d] = by_end.get(d) or a
+        open_rounds = sorted(by_end.items())
+        out["avvio"] = open_rounds[0][1] or out["avvio"]
+        out["id_vip"] = id_vip
+        out["oggetto"] = f(r"^[\d/]+\s+Oggetto:", r"Procedura integrata|Data (?:prot|presentazione|richiesta|ricezione|avvio|comunicazione"
+                          r"|pubblicazione|(?:[IVX]+ )?ripubblicazione)\b|Note:|Responsabile|Stato procedura", blk)
+        out["note"] = f("Note:", r"Responsabile del procedimento|Stato procedura", blk)
+        if len(open_rounds) > 1:
+            out["rounds"] = [[a, d] for d, a in open_rounds]
+    return out
 
 
 def personal(s):
@@ -143,7 +189,7 @@ def scrub(rec):
     """Drop every field that carries contact data or may name a natural person."""
     for k, v in list(rec.items()):
         if isinstance(v, list):
-            rec[k] = [x for x in v if not personal(x)]
+            rec[k] = [x for x in v if not (isinstance(x, str) and personal(x))]
         elif isinstance(v, str) and personal(v):
             rec[k] = None
     if rec.get("proponente"):  # VAS pages run the next fields into the proponente
@@ -181,9 +227,16 @@ def fetch_detail(pid, cache):
 
 
 def merge_listing(home, avvisi, today):
-    """Open procedures seen in the listings: id -> listing record (home wins)."""
-    seen = {x["id"]: x for x in avvisi if x["termine"] and x["termine"] >= today}
-    seen.update({x["id"]: x for x in home})
+    """Open procedures seen in the listings: id -> listing record (home wins), with "termini", every listed
+    deadline, and "termine", the earliest: the home lists a page twice when two rounds are open at once."""
+    seen, termini = {}, {}
+    for x in [x for x in avvisi if x["termine"] and x["termine"] >= today] + home:
+        seen[x["id"]] = dict(x)
+        if x["termine"]:
+            termini.setdefault(x["id"], set()).add(x["termine"])
+    for pid, x in seen.items():
+        x["termini"] = sorted(termini.get(pid, []))
+        x["termine"] = x["termini"][0] if x["termini"] else None
     return seen
 
 
@@ -195,7 +248,8 @@ def run(cache, max_detail):
     procs = load_json(DATA, {})
     blocked_ids = set(open(BLOCKLIST).read().split()) if os.path.exists(BLOCKLIST) else set()
     try:
-        home = parse_home(get(BASE + "/it-IT"))
+        home_html = get(BASE + "/it-IT")
+        home = parse_home(home_html)
         avvisi = parse_avvisi(get(BASE + "/it-IT/Procedure/AvvisiAlPubblico"))
     except Blocked as e:
         block(str(e))
@@ -203,21 +257,26 @@ def run(cache, max_detail):
     if not home:
         sys.exit("home listing parsed to zero procedures: layout changed? nothing written")
     seen = merge_listing(home, avvisi, today)
+    # the portal's banner about online submissions being disabled (since at least 9 Oct 2026); build.py says so
+    with open(PORTAL, "w", encoding="utf-8") as f:
+        json.dump({"checked": today, "online_disabled": bool(re.search(r"temporaneamente\s+(?:stato\s+)?disabilitat", home_html))}, f)
     for pid in blocked_ids:
         seen.pop(pid, None)
         procs.pop(pid, None)
-    todo = [pid for pid, x in seen.items() if pid not in procs or procs[pid].get("termine_osservazioni") != x["termine"]]
+    todo = [pid for pid, x in seen.items() if pid not in procs or procs[pid].get("termine_osservazioni") != x["termine"]
+            or procs[pid].get("termini") != x["termini"]]
     print(f"home {len(home)}, avvisi {len(avvisi)}, open {len(seen)}, detail to fetch {len(todo)} (cap {max_detail})", file=sys.stderr)
     try:
         for pid in todo[:max_detail]:
             x = seen[pid]
-            d = {k: v for k, v in parse_detail(fetch_detail(pid, cache), x["termine"]).items() if v}
+            d = {k: v for k, v in parse_detail(fetch_detail(pid, cache), x["termini"]).items() if v}
             old = procs.get(pid, {})
             rec = {"id": pid, "url": f"{BASE}/it-IT/Oggetti/Info/{pid}", "procedure_type": x["procedure_type"],
                    "tipologia": d.get("tipologia") or x["tipologia"], "title": d.get("title") or x["title"],
                    "proponente": d.get("proponente"), "regioni": d.get("regioni", []), "province": d.get("province", []),
                    "comuni": d.get("comuni", []), "avvio": d.get("avvio") or x.get("avvio"),
-                   "termine_osservazioni": x["termine"] or d.get("termine"), "stato": d.get("stato"),
+                   "termine_osservazioni": x["termine"] or d.get("termine"), "termini": x["termini"], "stato": d.get("stato"),
+                   "id_vip": d.get("id_vip"), "oggetto": d.get("oggetto"), "note": d.get("note"), "rounds": d.get("rounds"),
                    "first_seen": old.get("first_seen", today), "last_seen": today, "closed_at": None,
                    "updated_at": now if old.get("termine_osservazioni") != (x["termine"] or d.get("termine")) else old.get("updated_at", now)}
             procs[pid] = scrub(rec)

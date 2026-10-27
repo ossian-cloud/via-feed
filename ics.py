@@ -25,7 +25,7 @@ def _stamp(iso):
 
 
 def write_calendar(path, *, name, description, events):
-    """events: dicts with uid, date (YYYY-MM-DD), stamp (ISO UTC), summary, description, url."""
+    """events: dicts with uid, date (YYYY-MM-DD), stamp (ISO UTC), summary, description, url, optional alarm (e.g. -P7D)."""
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ossian.cloud//via-feed//IT",
              "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
              f"X-WR-CALNAME:{_esc(name)}", f"X-WR-CALDESC:{_esc(description)}",
@@ -37,7 +37,11 @@ def write_calendar(path, *, name, description, events):
                   f"DTSTART;VALUE=DATE:{day:%Y%m%d}",
                   f"DTEND;VALUE=DATE:{day + dt.timedelta(days=1):%Y%m%d}",
                   f"SUMMARY:{_esc(ev['summary'])}", f"DESCRIPTION:{_esc(ev['description'])}",
-                  f"URL:{ev['url']}", "TRANSP:TRANSPARENT", "END:VEVENT"]
+                  f"URL:{ev['url']}", "TRANSP:TRANSPARENT"]
+        if ev.get("alarm"):  # a reminder before the deadline (apps may drop alarms of subscribed calendars)
+            lines += ["BEGIN:VALARM", "ACTION:DISPLAY", f"DESCRIPTION:{_esc(ev['summary'])}",
+                      f"TRIGGER:{ev['alarm']}", "END:VALARM"]
+        lines.append("END:VEVENT")
     lines.append("END:VCALENDAR")
     with open(path + ".tmp", "w", encoding="utf-8", newline="") as f:
         f.write("\r\n".join(_fold(l) for l in lines) + "\r\n")
