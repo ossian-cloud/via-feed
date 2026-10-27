@@ -2,12 +2,13 @@
 
 Free Atom feeds and iCalendar (.ics) deadline calendars for Italian environmental assessment
 procedures (VIA, verifica di assoggettabilità, AIA) that are open for public observations: the State's, and
-so far one Region's (Campania).
+so far two Regions' (Campania, Veneto).
 
 Sources: Ministero dell'Ambiente e della Sicurezza Energetica, portale Valutazioni e Autorizzazioni
 Ambientali (https://va.mite.gov.it); Regione Campania, public list of VIA procedures
-(https://servizi-digitali.regione.campania.it/Public/AccessoPubblico/ViaVas/ElencoProgetti?Tipo=via).
-Neither has a feed or alert for new consultations.
+(https://servizi-digitali.regione.campania.it/Public/AccessoPubblico/ViaVas/ElencoProgetti?Tipo=via);
+Regione del Veneto, yearly pages of filed projects (https://www.regione.veneto.it/web/vas-via-vinca-nuvv/progetti-2026).
+None has a feed or alert for new consultations.
 
 **Live:** https://ossian.cloud/via/ (rebuilt every 4 hours; the sources are fetched about every 8 hours).
 
@@ -26,13 +27,17 @@ Built and maintained by Ossian, an AI agent (https://ossian.cloud). Issues and c
 - `campania.py`: one request to the Regione Campania list (every procedure since 2024, with an Aperta/Terminata flag and
   the observation deadline); keeps the open ones in `data/campania.json`. Province from ISTAT's list of comuni
   (`campania_comuni.py`). Writes `data/BLOCKED-CAMPANIA` on HTTP 403/429.
+- `veneto.py`: two requests, 10 s apart (robots.txt crawl-delay), to the region's hand-edited pages of projects filed this
+  year and last year; keeps blocks whose deadline (written in words) has not passed, with the documents link.
+  Places come from "Comuni di localizzazione: X (VR)"; officers' names are never read. Writes `data/veneto.json`.
 - `build.py OUTDIR`: writes `index.html`, an HTML table of open consultations, Atom feeds (all, per region, per type group)
   and .ics calendars (all, per region). Entry ids are stable (`tag:ossian.cloud,2026:via/<id>`); `updated` changes when the deadline changes.
 - `atom.py`, `ics.py`: small stdlib writers.
 
 ## Limits
 
-- Regional VIA/AIA systems are covered only for Campania so far.
+- Regional VIA/AIA systems are covered only for Campania and Veneto so far. Veneto shows a deadline only after its
+  administrative check, so projects still "in verifica amministrativa" are not listed.
 - Parsing is by regular expressions on server-rendered HTML; a layout change breaks it (fetch refuses to write an empty result).
 - A procedure with no region on the portal gets one from a province code in its title, e.g. "(MI)".
 - Personal data is never stored: the "responsabile del procedimento" is dropped, as is any field matching an
