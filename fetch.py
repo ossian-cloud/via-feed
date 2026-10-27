@@ -37,8 +37,18 @@ COMPANY = re.compile(r"\b(?:s\.?r\.?l|s\.?p\.?a|s\.?a\.?s|s\.?n\.?c|s\.?c\.?a?r?
                      r"societ\w*|autorit\w*|comune|regione|provincia|ministero|consorzio|ente|agenzia|azienda|"
                      r"fondazione|cooperativa|coop|gruppo|energia|energy|power|solar|wind|green|renewable|"
                      r"italia|italiana|group|holding|porto|porti|anas|rfi|enel|eni|terna|snam|a2a|iren|"
-                     r"unione|università|consortium|company|spa|srl|park|impianti|costruzioni)\b", re.I)
+                     r"unione|università|consortium|company|spa|srl|srls|park|impianti|costruzioni|"
+                     r"comunit\w*|consorz\w*|direzion\w*|rinnovabil\w*)\b", re.I)
 NAMELIKE = re.compile(r"^(?:ditta |impresa individuale )?[A-ZÀ-Ý][a-zà-ÿ']+(?: (?:de|di|del|della|dal|d'|la|lo)?\s?[A-ZÀ-Ý][a-zà-ÿ']+){1,3}$")
+TITLES = re.compile(r"^(?:(?:ing|dott|dott\.ssa|arch|geom|avv|sig|sig\.ra|prof)\.?\s+)+", re.I)
+
+
+def personlike(p):
+    """Words only, in any case, 2 to 12 of them, no company or public-body keyword: likely one or more people
+    ('GRIGOLI GIANCARLO', 'ing. Mario Rossi', 'METALFER di Coppola Antonio'). Some small firms get dropped too: safe side."""
+    q = TITLES.sub("", p.strip())
+    ws = re.findall(r"[^\s,]+", q)
+    return not COMPANY.search(q) and 2 <= len(ws) <= 12 and all(re.fullmatch(r"[A-Za-zÀ-ÿ']+", w) for w in ws)
 
 
 class Blocked(Exception):
@@ -195,7 +205,7 @@ def scrub(rec):
     if rec.get("proponente"):  # VAS pages run the next fields into the proponente
         rec["proponente"] = re.split(r"\s+Settore di pianificazione\s*:", rec["proponente"])[0].strip()
     p = rec.get("proponente")
-    if p and NAMELIKE.match(p) and not COMPANY.search(p):
+    if p and (NAMELIKE.match(p) and not COMPANY.search(p) or personlike(p)):
         rec["proponente"] = None
     return rec
 

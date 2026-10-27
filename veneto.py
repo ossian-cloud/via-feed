@@ -40,25 +40,33 @@ def to_text(h):
 
 
 def deadline(s):
-    m = re.search(r"DATA SCADENZA OSSERVAZIONI\s*(\d{1,2})°?\s+(" + "|".join(MONTHS) + r")\s+(\d{4})", s, re.I)
-    return f"{m[3]}-{MONTHS.index(m[2].lower()) + 1:02d}-{int(m[1]):02d}" if m else None
+    """The latest date after any 'SCADENZA' label: reopened terms add 'NUOVA DATA SCADENZA OSSERVAZIONI ...: <date>'."""
+    ds = [f"{m[3]}-{MONTHS.index(m[2].lower()) + 1:02d}-{int(m[1]):02d}" for m in
+          re.finditer(r"SCADENZA(?:[^\n]*\n)?\s*(\d{1,2})°?\s+(" + "|".join(MONTHS) + r")\s+(\d{4})", s, re.I)]
+    return max(ds) if ds else None
+
+
+# 'Comuni di localizzazione:', 'Comune interessato:', and the page's typos ('localizzaizione', 'Comuneidi')
+LABEL = r"[Cc][Oo][Mm][Uu][Nn][EeIi]\s*(?:di|i)?\s*(?:[Ll]ocal\w*|[Ii]nteressat\w*)\s*:?"
 
 
 def places(title):
     """'Comuni di localizzazione: Melara (RO) e Ostiglia (MN) - Comuni interessati: Adria (RO)' ->
     (comuni, province codes). A province code applies to the names before it."""
     comuni, codes = [], []
-    for m in re.finditer(r"Comun[ei] (?:di localizzazione|interessat[oi])\s*:\s*(.+?)(?=\s+-\s+Comun|\s*\[\[|$)", title):
+    for seg in re.split(LABEL, title)[1:]:
         pending = []
-        for tok in re.split(r"(\([A-Z]{2}\))", m[1]):
-            code = re.fullmatch(r"\(([A-Z]{2})\)", tok)
+        for tok in re.split(r"(\(\s*[A-Z]{2}\s*\))", seg):
+            code = re.fullmatch(r"\(\s*([A-Z]{2})\s*\)", tok)
             if code:
                 comuni += pending
                 codes.append(code[1])
                 pending = []
             else:
-                pending += [x.strip(" .") for x in re.split(r",|\s+e\s+", tok) if x.strip(" .")]
+                pending += [x.strip(" .;-") for x in re.split(r",|;|\s+e\s+|\s+-\s+", tok) if x.strip(" .;-")]
         comuni += pending
+    accent = {"a": "à", "e": "è", "i": "ì", "o": "ò", "u": "ù"}
+    comuni = [re.sub(r"([aeiou])'$", lambda m: accent[m[1]], c) for c in comuni]  # Rosa' -> Rosà
     return list(dict.fromkeys(comuni)), list(dict.fromkeys(c for c in codes if c in SIGLA_PROVINCE))
 
 
@@ -73,8 +81,11 @@ def parse(h, page_url):
         proponente = body.split("\n", 1)[0].strip()
         link = re.search(r"\[\[(https?://[^\]]+)\]\]\s*(.*?)\s*DATA SCADENZA", body, re.S)
         title = re.sub(r"\s+", " ", link[2]).strip() if link else None
-        status = re.search(r"DATA SCADENZA OSSERVAZIONI[^\n]*\n(?:\s*\d{1,2}°?\s+\w+\s+\d{4}\s*\n)?\s*([^\n]+)", body)
-        status = re.sub(r"\[\[[^\]]*\]\]", "", status[1]).strip() if status else ""
+        before_info = re.split(r"Per informazioni", body)[0] if "Per informazioni" in body else ""
+        lines = [re.sub(r"\[\[[^\]]*\]\]", "", l).strip() for l in before_info.split("\n")]
+        status = next((l for l in reversed(lines) if l), "")
+        if "SCADENZA" in status.upper() or re.fullmatch(r"\d{1,2}°?\s+\w+\s+\d{4}", status):
+            status = ""
         out.append({"num": num, "kind": kind, "proponente": proponente, "url": link[1] if link else page_url,
                     "title": title, "termine": deadline(body),
                     "stato": status if status and not status.startswith("Per informazioni") else None})
@@ -86,7 +97,7 @@ def record(x, year, old, today, now):
     rid = f"veneto-{year}-{x['num'].split('/')[0]}"
     rec = {"id": rid, "authority": AUTHORITY, "codice": f"{x['num']}" if "/" in x["num"] else f"{x['num']}/{str(year)[2:]}",
            "url": x["url"], "procedure_type": x["kind"] or "Procedura di VIA regionale", "tipologia": None,
-           "title": re.split(r"\.?\s+-?\s*Comun[ei] (?:di localizzazione|interessat)", x["title"])[0].strip(" .-"),
+           "title": re.split(r"[.;]?\s+-?\s*" + LABEL, x["title"])[0].strip(" .;-"),
            "proponente": x["proponente"] or None, "regioni": sorted({SIGLA_REGION[c] for c in codes}) or ["Veneto"],
            "province": [SIGLA_PROVINCE[c] for c in codes], "comuni": comuni, "avvio": None,
            "termine_osservazioni": x["termine"], "termini": [x["termine"]], "stato": x["stato"],
@@ -117,7 +128,7 @@ def run():
             if e.code in (403, 429):
                 open(BLOCKED, "w").write(f"{now} HTTP {e.code} on {url}\n")
             sys.exit(f"veneto: HTTP {e.code} on {url}")
-        if y == year and len(rows) < 10 and today[5:] > "03-01":
+        if len(rows) < 10 and (y < year or today[5:] > "03-01"):
             sys.exit(f"veneto: parsed only {len(rows)} blocks on {url}: layout changed? nothing written")
         nrows += len(rows)
         for x in rows:
