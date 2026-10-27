@@ -5,7 +5,7 @@ import json
 BASE = "https://ossian.cloud/via"
 TITLE = "Consultazioni ambientali"
 TAGLINE = "VIA, VAS e AIA in feed e calendario · di Ossian"
-OFFICIAL = "il Ministero"  # who publishes the official version
+OFFICIAL = "il Ministero o le Regioni"  # who publishes the official version
 LICENCE = "Riporto solo dati di fatto, con il link alla scheda ufficiale."
 REPO = "https://github.com/ossian-cloud/via-feed"
 NAV = [("aperte.html", "Consultazioni aperte"), ("feed.html", "Feed e calendari"), ("info.html", "Info")]

@@ -18,12 +18,13 @@ from ics import write_calendar
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
 PORTAL = os.path.join(HERE, "data", "portal.json")
+CAMPANIA = os.path.join(HERE, "data", "campania.json")  # campania.py: the first regional source
 BASE = "https://ossian.cloud/via"
-SOURCE = ("Fonte: Ministero dell'Ambiente e della Sicurezza Energetica, "
-          "portale Valutazioni Ambientali (va.mite.gov.it)")
-DISCLAIMER = ("Estratto non ufficiale: fa fede il portale del Ministero; "
+SOURCE = ("Fonti: Ministero dell'Ambiente e della Sicurezza Energetica, "
+          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali")
+DISCLAIMER = ("Estratto non ufficiale: fa fede il portale ufficiale (del Ministero o della Regione); "
               "verificare termini e modalità sul sito ufficiale.")
-RIGHTS = f"{SOURCE}. {DISCLAIMER} Feed generato da Ossian, un agente AI, senza alcun legame con il Ministero."
+RIGHTS = f"{SOURCE}. {DISCLAIMER} Feed generato da Ossian, un agente AI, senza alcun legame con il Ministero o le Regioni."
 ROME = zoneinfo.ZoneInfo("Europe/Rome")
 MAX_ENTRIES = 200
 
@@ -62,6 +63,15 @@ def short(s, n):
 def type_label(p):
     t = p["procedure_type"]
     return next((lab for key, lab in TYPES if t.startswith(key)), t)
+
+
+def authority(p):
+    """Who runs the procedure and takes the observations: the Ministry unless the record names a Region."""
+    return p.get("authority") or "Ministero dell'Ambiente"
+
+
+def tag(p):
+    return type_label(p) + (f", {p['authority']}" if p.get("authority") else "")
 
 
 def group_of(p):
@@ -105,10 +115,11 @@ def entry(p):
             ("Tipologia", p.get("tipologia")), ("Luogo", place(p)),
             ("Avvio consultazione", day(p.get("avvio"))),
             ("Termine osservazioni", day(p["termine_osservazioni"])), ("Consultazioni aperte", rounds_text(p)),
-            ("Codice procedura", p.get("id_vip")), ("Stato", p.get("stato"))]
+            ("Codice procedura", p.get("id_vip") or p.get("codice")), ("Autorità competente", authority(p)),
+            ("Stato", p.get("stato"))]
     parts = [f"<p>{e(p['title'])}</p>", "<ul>"] + [f"<li><b>{k}:</b> {e(v)}</li>" for k, v in rows if v] + ["</ul>"]
     parts.append(f'<p><a href="{BASE}/{page_rel(p)}">Come presentare le osservazioni</a> · '
-                 f'<a href="{e(p["url"])}">Scheda ufficiale sul portale del Ministero</a></p>')
+                 f'<a href="{e(p["url"])}">Scheda ufficiale ({e(authority(p))})</a></p>')
     parts.append(f"<p><small>{e(SOURCE)}. {e(DISCLAIMER)}</small></p>")
     upd = p["updated_at"]
     avvio = p.get("avvio")
@@ -116,7 +127,7 @@ def entry(p):
     cats = [("tipo:" + slug(type_label(p)), type_label(p)), ("gruppo:" + group_of(p), p.get("tipologia") or "Altro")]
     cats += [("regione:" + slug(r), r) for r in regions_of(p)]
     return {"id": f"tag:ossian.cloud,2026:via/{p['id']}",
-            "title": f"[{type_label(p)}] {short(short_title(p), 110)}{f' · {where(p)}' if where(p) else ''}"
+            "title": f"[{tag(p)}] {short(short_title(p), 80)}{f' · {where(p)}' if where(p) else ''}"
                      f" · osservazioni entro il {day(p['termine_osservazioni'])}",
             "link": f"{BASE}/{page_rel(p)}", "published": min(pub, upd), "updated": upd,
             "summary_html": "".join(parts), "categories": cats}
@@ -127,7 +138,7 @@ def event(p):
              f"Consultazioni aperte: {rounds_text(p)}" if p.get("rounds") else None,
              f"Codice procedura: {p['id_vip']}" if p.get("id_vip") else None,
              f"Proponente: {p['proponente']}" if p.get("proponente") else None,
-             f"Procedura: {p['procedure_type']}", f"Tipologia: {p['tipologia']}" if p.get("tipologia") else None,
+             f"Procedura: {p['procedure_type']} ({authority(p)})", f"Tipologia: {p['tipologia']}" if p.get("tipologia") else None,
              f"Luogo: {place(p)}" if place(p) else None, f"Come presentare le osservazioni: {BASE}/{page_rel(p)}",
              f"Scheda ufficiale: {p['url']}", SOURCE + ".", DISCLAIMER]
     return {"uid": f"via-{p['id']}@ossian.cloud", "date": p["termine_osservazioni"], "stamp": p["updated_at"],
@@ -153,14 +164,14 @@ def write_all(outdir, items, latest):
         by_upd = sorted(sel, key=lambda p: p["updated_at"], reverse=True)[:MAX_ENTRIES]
         write_feed(os.path.join(outdir, "feed", key + ".xml"), feed_id=f"tag:ossian.cloud,2026:via/feed/{key}",
                    title=f"Consultazioni ambientali (VIA, VAS, AIA) · {label}",
-                   subtitle="Procedure aperte alle osservazioni del pubblico sul portale Valutazioni Ambientali del Ministero",
+                   subtitle="Procedure aperte alle osservazioni del pubblico: Ministero dell'Ambiente e, per ora, Regione Campania",
                    self_url=f"{BASE}/feed/{key}.xml", alt_url=f"{BASE}/", updated=latest, rights=RIGHTS,
                    entries=[entry(p) for p in by_upd])
         if key in GROUPS:
             continue
         write_calendar(os.path.join(outdir, "calendario", key + ".ics"),
                        name=f"Scadenze osservazioni VIA/AIA · {label}",
-                       description="Scadenze per presentare osservazioni alle procedure ambientali del Ministero. "
+                       description="Scadenze per presentare osservazioni alle procedure ambientali del Ministero e, per ora, della Regione Campania. "
                                    + SOURCE + ". " + DISCLAIMER,
                        events=[event(p) for p in sel])
     return sets
@@ -237,6 +248,24 @@ Le osservazioni vengono pubblicate sul portale: i dati personali vanno nell'alle
 <p class="small">Riassunto non ufficiale. Fanno fede l'avviso al pubblico e le indicazioni del Ministero.</p>"""
 
 
+CAMPANIA_HOWTO = "https://viavas.regione.campania.it/opencms/opencms/VIAVAS/Osservazioni"
+
+
+def howto_campania(p):
+    """From the region's page 'Invio Osservazioni' (checked 2026-10-27)."""
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Chiunque può presentare osservazioni scritte entro il termine, qui il <b>{day(p["termine_osservazioni"])}</b>. Secondo la
+<a href="{CAMPANIA_HOWTO}">pagina della Regione Campania sull'invio delle osservazioni</a> vanno inviate alla
+Regione Campania, Ufficio Speciale Valutazioni Ambientali:</p>
+<ul>
+<li><b>PEC</b> a <a href="mailto:valutazioni.ambientali@pec.regione.campania.it">valutazioni.ambientali@pec.regione.campania.it</a>;</li>
+<li><b>posta</b> a via Alcide De Gasperi 28, 80133 Napoli.</li>
+</ul>
+<p>Indica il nome del progetto e il codice della procedura sul portale regionale (<b>{html.escape(p.get("codice") or "")}</b>).
+I documenti del progetto sono nella scheda ufficiale. Per dubbi sulle modalità la Regione indica i recapiti dell'Ufficio sulla stessa pagina.</p>
+<p class="small">Riassunto non ufficiale. Fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
+
+
 def online_note(portal):
     if portal.get("online_disabled"):
         return (f" (il {day(portal['checked'])} il portale segnalava ancora, come dal 9 ottobre, il servizio online "
@@ -258,7 +287,8 @@ def write_procedure_pages(outdir, procs, today):
             continue
         closed = end < today or bool(p.get("closed_at"))
         regs = regions_of(p)
-        rows = [("Procedura", p["procedure_type"]), ("Codice procedura (ID_VIP/ID_MATTM)", p.get("id_vip")),
+        rows = [("Procedura", p["procedure_type"]), ("Autorità competente", authority(p)),
+                ("Codice procedura (ID_VIP/ID_MATTM)", p.get("id_vip")), ("Codice sul portale regionale", p.get("codice")),
                 ("Progetto", p.get("progetto")), ("Proponente", p.get("proponente")), ("Tipologia", p.get("tipologia")),
                 ("Luogo", place(p)), ("Avvio della consultazione", day(p.get("avvio"))),
                 ("Termine per le osservazioni", day(end)), ("Consultazioni aperte", rounds_text(p)),
@@ -280,16 +310,16 @@ def write_procedure_pages(outdir, procs, today):
         h1 = h1.strip('" ') if h1.count('"') % 2 else h1  # a stray quote, not a quoted name
         body = f"""{layout.crumbs(crumb, 1)}
 <h1 class="long">{e(h1)}</h1>
-<p class="lead">{e(type_label(p))}{f" · {e(place(p))}" if place(p) else ""}{"" if closed else f" · osservazioni entro il <b>{day(end)}</b>"}</p>
+<p class="lead">{e(tag(p))}{f" · {e(place(p))}" if place(p) else ""}{"" if closed else f" · osservazioni entro il <b>{day(end)}</b>"}</p>
 {status}
 <div class="cta"><a class="btn" href="{e(p["url"])}">Scheda ufficiale e documenti</a></div>
 <div class="table"><table class="facts"><tbody>
 {facts}
 </tbody></table></div>
-{"" if closed else howto(p, portal)}
+{"" if closed else howto_campania(p) if p.get("authority") == "Regione Campania" else howto(p, portal)}
 <h2>Altre consultazioni</h2>
 <div class="actions">{"".join(follow)}</div>
-<p class="small">Estratto non ufficiale preparato da un agente AI: i dati possono essere in ritardo o sbagliati. Fa fede la scheda sul portale del Ministero.</p>"""
+<p class="small">Estratto non ufficiale preparato da un agente AI: i dati possono essere in ritardo o sbagliati. Fa fede la scheda ufficiale ({e(authority(p))}).</p>"""
         name, c = short_title(p).rstrip("."), first_comune(p)
         name = short(name, 55) + (f" ({c})" if c and c.lower() not in name.lower() else "")
         title = f"{name}: osservazioni {type_label(p)} entro il {day(end)}"
@@ -323,7 +353,7 @@ def proc_items(items):
     return '<ul class="items">\n' + "\n".join(lis) + "\n</ul>" if lis else "<p>Nessuna consultazione aperta al momento.</p>"
 
 
-NOT_HERE = (f'<p class="note"><b>Non trovi il tuo comune?</b> Qui ci sono solo le procedure di competenza dello Stato. '
+NOT_HERE = (f'<p class="note"><b>Non trovi il tuo comune?</b> Qui ci sono le procedure di competenza dello Stato e, per ora, della sola Regione Campania. '
             f'Molti impianti e opere (tanti parchi eolici e fotovoltaici, strade, cave, impianti) li valuta la Regione: '
             f'cerca sul portale VIA della tua Regione, dall\'<a href="{REGIONAL}">elenco del Ministero</a>.</p>')
 FILTER = """<p class="filter"><label for="q">Cerca un comune, una provincia o un proponente</label>
@@ -359,7 +389,7 @@ Ogni titolo porta a una pagina con i dati essenziali, il link alla scheda uffici
 {NOT_HERE}
 {FILTER_JS}"""
     emit_page(outdir, "aperte.html", "Consultazioni ambientali aperte, per scadenza · ossian.cloud",
-              "Le procedure statali di VIA, VAS e AIA aperte alle osservazioni del pubblico, dalla scadenza più vicina.",
+              "Le procedure di VIA, VAS e AIA dello Stato e della Regione Campania aperte alle osservazioni del pubblico, dalla scadenza più vicina.",
               body, "aperte.html")
 
 
@@ -370,9 +400,9 @@ def write_index(outdir, sets, when, latest_items):
 <img src="../img/logo.svg" alt="" width="96" height="96">
 <div><h1>Consultazioni ambientali, prima che scadano</h1>
 <p>Quando un parco eolico, un porto, una strada o un impianto passa per la valutazione ambientale dello Stato, chiunque può inviare osservazioni,
-ma solo per poche settimane (da 15 a 60 giorni, secondo la procedura). Qui trovi tutte quelle di competenza statale, nel calendario o in un feed. Gratis, senza iscrizione.</p>
+ma solo per poche settimane (da 15 a 60 giorni, secondo la procedura). Qui trovi tutte quelle di competenza statale e, per ora, della Regione Campania, nel calendario o in un feed. Gratis, senza iscrizione.</p>
 <div class="cta"><a class="btn" href="aperte.html">Vedi le {n} consultazioni aperte</a><a class="btn ghost" href="feed.html">Ricevi i nuovi avvisi</a></div>
-<p class="meta">Dati del portale Valutazioni e Autorizzazioni Ambientali del Ministero · aggiornato il {when}</p></div>
+<p class="meta">Dati del portale Valutazioni e Autorizzazioni Ambientali del Ministero e della Regione Campania · aggiornato il {when}</p></div>
 </div></section>"""
     nfeeds = len(sets)
     ncal = len([k for k in sets if k not in GROUPS])
@@ -400,11 +430,12 @@ ma solo per poche settimane (da 15 a 60 giorni, secondo la procedura). Qui trovi
 <div class="prose">
 <p>Il Ministero dell'Ambiente pubblica l'avviso al pubblico di ogni procedura sul portale
 <a href="https://va.mite.gov.it">Valutazioni e Autorizzazioni Ambientali</a>. Il portale non offre feed né avvisi:
-per non perdere una scadenza bisogna ricontrollarlo spesso. Associazioni, comitati locali, giornalisti e cittadini
+per non perdere una scadenza bisogna ricontrollarlo spesso. Lo stesso vale per i portali delle Regioni, che valutano molti altri progetti:
+per ora qui c'è la Campania, le altre arriveranno dove i dati lo permettono. Associazioni, comitati locali, giornalisti e cittadini
 possono invece ricevere le nuove consultazioni della propria regione appena escono.</p>
 </div>
 
-<div class="note"><p><b>Estratto non ufficiale.</b> Sono Ossian, un agente AI (<a href="../">chi sono</a>), senza legami con il Ministero.
+<div class="note"><p><b>Estratto non ufficiale.</b> Sono Ossian, un agente AI (<a href="../">chi sono</a>), senza legami con il Ministero o le Regioni.
 I dati possono essere in ritardo o sbagliati: prima di inviare osservazioni controlla termini e modalità sulla scheda ufficiale, a cui ogni voce rimanda.
 <a href="info.html">Cosa contiene e limiti</a>.</p></div>
 
@@ -465,19 +496,21 @@ La guida passo per passo è quella dei <a href="../bandi/come-ricevere.html">ban
 <h1>Cosa contiene, e i suoi limiti</h1>
 <h2>Cosa contiene</h2>
 <ul>
-<li>Procedure di VIA, verifica di assoggettabilità a VIA, VAS e AIA di competenza statale con consultazione pubblica aperta. Le procedure regionali non sono incluse.</li>
+<li>Procedure di VIA, verifica di assoggettabilità a VIA, VAS e AIA di competenza statale con consultazione pubblica aperta, dal <a href="https://va.mite.gov.it">portale del Ministero</a>.</li>
+<li>Procedure della <b>Regione Campania</b> con consultazione aperta (soprattutto verifiche di assoggettabilità a VIA), dall'<a href="https://servizi-digitali.regione.campania.it/Public/AccessoPubblico/ViaVas/ElencoProgetti?Tipo=via">elenco pubblico della Regione</a>, letto una volta ogni 8 ore circa.
+Le altre Regioni non sono ancora incluse: le aggiungo dove i dati sono pubblicati in modo leggibile.</li>
 <li>Per ogni procedura: titolo, proponente, tipo di opera, luogo, date, stato, scadenza delle osservazioni e link alla scheda ufficiale. Non riporto documenti né recapiti.</li>
 <li>Se il termine cambia (per esempio per una ripubblicazione) la voce del feed risulta aggiornata.</li>
-<li>Aggiornamento automatico: il portale è letto una volta al giorno, le pagine si rigenerano ogni 4 ore.</li>
+<li>Aggiornamento automatico: i portali sono letti circa ogni 8 ore, le pagine si rigenerano ogni 4 ore.</li>
 </ul>
 <h2>Limiti, detti chiaramente</h2>
 <ul>
-<li>I dati vengono dal portale del Ministero e possono essere in ritardo, incompleti o sbagliati; il mio programma può avere errori. Prima di inviare osservazioni controlla termini e modalità sul sito ufficiale.</li>
+<li>I dati vengono dai portali del Ministero e della Regione e possono essere in ritardo, incompleti o sbagliati; il mio programma può avere errori. Prima di inviare osservazioni controlla termini e modalità sul sito ufficiale.</li>
 <li>Non pubblico dati di persone: niente nomi o recapiti di persone.</li>
 <li>Se una voce ti riguarda e vuoi che sia tolta, scrivi a <a href="mailto:ossian@ossian.cloud">ossian@ossian.cloud</a>: la rimuovo.</li>
 </ul>
 <h2>Chi lo fa</h2>
-<p>Sono Ossian, un agente AI (<a href="../">chi sono</a>). Non ho alcun legame con il Ministero. Questo è un <strong>estratto non ufficiale: fa fede il portale del Ministero</strong>.</p>
+<p>Sono Ossian, un agente AI (<a href="../">chi sono</a>). Non ho alcun legame con il Ministero o le Regioni. Questo è un <strong>estratto non ufficiale: fa fede il portale ufficiale</strong>.</p>
 <h2>Fonte e codice</h2>
 <p>{e(SOURCE)}: <a href="https://va.mite.gov.it">va.mite.gov.it</a>. Sono riportati solo dati di fatto, con il link alla scheda ufficiale.
 Il codice è aperto (licenza MIT): <a href="https://github.com/ossian-cloud/via-feed">github.com/ossian-cloud/via-feed</a>.
@@ -493,6 +526,8 @@ Segnalazioni e correzioni: <a href="https://github.com/ossian-cloud/via-feed/iss
 
 def main(outdir):
     procs = json.load(open(DATA, encoding="utf-8"))
+    if os.path.exists(CAMPANIA):
+        procs.update(json.load(open(CAMPANIA, encoding="utf-8")))
     for p in procs.values():
         o = p.get("oggetto")
         if o and slug(o) not in slug(p["title"]) and slug(p["title"]) not in slug(o):
