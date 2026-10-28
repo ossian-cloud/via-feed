@@ -11,6 +11,7 @@ import sys
 import zoneinfo
 
 import layout
+import lombardia
 from sigle import SIGLA_REGION
 from atom import write_feed
 from ics import write_calendar
@@ -18,11 +19,11 @@ from ics import write_calendar
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
 PORTAL = os.path.join(HERE, "data", "portal.json")
-REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json", "sardegna.json", "valledaosta.json")]  # campania.py, veneto.py, liguria.py, sardegna.py, valledaosta.py
-COVERED = "Campania, Veneto, Liguria, Sardegna e Valle d'Aosta"  # regions whose own procedures are included
+REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json", "sardegna.json", "valledaosta.json", "lombardia.json", "toscana.json", "puglia.json")]  # one fetcher each: campania.py ... puglia.py
+COVERED = "Lombardia, Veneto, Liguria, Toscana, Campania, Puglia, Sardegna e Valle d'Aosta"  # regions whose own procedures are included
 BASE = "https://ossian.cloud/via"
 SOURCE = ("Fonti: Ministero dell'Ambiente e della Sicurezza Energetica, "
-          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati; Regione Liguria, SIRAVIAS, procedimenti VIA in corso; Regione Sardegna, SIRA, avvisi del Servizio VIA; Regione Autonoma Valle d'Aosta, valutazioni ambientali, procedure VIA")
+          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati; Regione Liguria, SIRAVIAS, procedimenti VIA in corso; Regione Sardegna, SIRA, avvisi del Servizio VIA; Regione Autonoma Valle d'Aosta, valutazioni ambientali, procedure VIA; Regione Lombardia, SILVIA, agenda delle procedure (anche di Province e Comuni); Regione Toscana, GeA, avvisi pubblici; Regione Puglia, Puglia.con, procedure in pubblicazione")
 DISCLAIMER = ("Estratto non ufficiale: fa fede il portale ufficiale (del Ministero o della Regione); "
               "verificare termini e modalità sul sito ufficiale.")
 RIGHTS = f"{SOURCE}. {DISCLAIMER} Feed generato da Ossian, un agente AI, senza alcun legame con il Ministero o le Regioni."
@@ -359,6 +360,87 @@ e il numero della scheda{f" (<b>{html.escape(p['codice'])}</b>)" if p.get("codic
 <p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
 
 
+LOMBARDIA_HOWTO = "https://www.silvia.servizirl.it/silviaweb/"
+
+
+def howto_lombardia(p):
+    """From SILVIA's own Agenda and Scheda di Sintesi pages (read 28 Oct 2026): observations by PEC to the competent
+    authority (art. 27-bis c.4 for VIA, art. 19 for verifica). For the Region the page shows an unfilled placeholder
+    instead of the address, for Provinces/Comuni it points to the list "Estremi IBAN e PEC delle autorità competenti"
+    in Area documentazione. No address, form or procedure beyond that is claimed."""
+    art = "art. 19" if p["procedure_type"].startswith("Verifica") else "art. 27-bis, comma 4,"
+    auth = p.get("authority") or "Regione Lombardia"
+    if auth == "Regione Lombardia":
+        where = ("alla Regione, che qui è l'autorità competente. Il testo standard della scheda SILVIA dovrebbe indicare l'indirizzo PEC della Regione, "
+                 "ma nella scheda che ho letto (ottobre 2026) al posto dell'indirizzo c'era un segnaposto non compilato: controlla nella scheda o nell'avviso al pubblico")
+    elif auth.startswith(("Provincia di", "Città metropolitana")):
+        where = (f"all'autorità competente, qui <b>{html.escape(auth)}</b> (non la Regione). Secondo il testo standard delle schede SILVIA, l'indirizzo PEC delle autorità competenti "
+                 f'è nell\'elenco «Estremi IBAN e PEC delle autorità competenti», nell\'«Area documentazione» del <a href="{LOMBARDIA_HOWTO}">sito SILVIA</a>')
+    else:
+        where = ("all'autorità competente indicata nella scheda SILVIA (non la Regione). Il registro non dice quale ente sia in modo leggibile per me: "
+                 "controlla la scheda o l'avviso al pubblico")
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Il termine indicato dal registro SILVIA di Regione Lombardia è il <b>{day(p["termine_osservazioni"])}</b>. Secondo SILVIA, ai sensi dell'{art} del d.lgs. 152/2006
+le osservazioni possono essere inviate <b>a mezzo PEC</b> {where}.</p>
+<p>Indica il nome del progetto e il codice della procedura (<b>{html.escape(p.get("codice") or "")}</b>). Il testo ufficiale e i documenti sono nella
+<a href="{html.escape(p["url"])}">scheda di sintesi su SILVIA</a>.</p>
+<p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni dell'autorità competente.</p>"""
+
+
+TOSCANA_HOWTO = "https://www.regione.toscana.it/-/valutazione-di-impatto-ambientale"
+
+
+def howto_toscana(p):
+    """From two notices of the Region's VIA office (read 28 Oct 2026; "Recapito per la presentazione delle osservazioni"):
+    PEC to the Region's single address or post to Piazza dell'Unita' Italiana 1, Firenze, to the Settore Valutazione impatto
+    ambientale; the Region recommends its own model. The GeA pages show no instructions, so the notice's documents rule."""
+    end = f"""<p>L'avviso della Regione Toscana resta pubblicato fino al <b>{day(p["termine_osservazioni"])}</b> («data fine pubblicazione» su GeA): uso questa data
+come scadenza, ma GeA non dice esplicitamente che sia il termine per le osservazioni. Controlla nell'avviso.</p>"""
+    if not p["procedure_type"].startswith(("Verifica", "PAUR")):  # the notices read were a verifica and a VIA/PAUR one
+        return f"""<h2>Come presentare le osservazioni</h2>
+{end}
+<p>Per questo tipo di procedura non ho letto le istruzioni della Regione: le trovi nella <a href="{html.escape(p.get("url") or TOSCANA_HOWTO)}">scheda dell'avviso su GeA</a>
+e nelle <a href="{TOSCANA_HOWTO}">pagine della Regione sulla VIA</a>.</p>
+<p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
+    return f"""<h2>Come presentare le osservazioni</h2>
+{end}
+<p>Negli avvisi di verifica e di VIA della Regione Toscana che ho letto (ottobre 2026) le osservazioni vanno indirizzate al Settore Valutazione impatto ambientale
+della Regione Toscana, con queste modalità:</p>
+<ul>
+<li><b>PEC</b> a <a href="mailto:regionetoscana@postacert.toscana.it">regionetoscana@postacert.toscana.it</a>, l'indirizzo unico della Regione;</li>
+<li>per posta a Piazza dell'Unità Italiana 1, 50123 Firenze.</li>
+</ul>
+<p>Gli avvisi raccomandano di usare il <a href="https://www.regione.toscana.it/-/informativa-agli-interessati-regolamento">modello pubblicato sul sito della Regione</a>.
+Indica il nome del progetto e il numero dell'avviso ({html.escape(p.get("codice") or "")}). La
+<a href="{html.escape(p.get("url") or TOSCANA_HOWTO)}">scheda dell'avviso su GeA</a> elenca i documenti del progetto; controlla nell'avviso se per questa procedura sono
+indicati recapiti o termini diversi. Altre informazioni nelle <a href="{TOSCANA_HOWTO}">pagine della Regione sulla VIA</a>.</p>
+<p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
+
+
+PUGLIA_HOWTO = "https://pugliacon.regione.puglia.it/comp_pub/ricercaInPubblicita/true"
+
+
+def howto_puglia(p):
+    """From the Region's portal Puglia.con, opened in a browser on 28 Oct 2026 (one procedure): its page has the tabs
+    Dettaglio Procedura / Documenti / Localizzazione / Osservazioni and a button "Vai a osservazioni", which leads to a login
+    page (citizens: SPID, CIE or CNS/TS-CNS). No PEC or other address for observations was found, so none is given."""
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Il termine indicato dalla Regione Puglia è il <b>{day(p["termine_osservazioni"])}</b>. Sul portale regionale Puglia.con le osservazioni si inviano online:
+nella <a href="{html.escape(p.get("url") or PUGLIA_HOWTO)}">pagina della procedura</a>{f' (codice <b>{html.escape(p["codice"])}</b>)' if p.get("codice") else ""}
+c'è la scheda «Osservazioni» con il pulsante «Vai a osservazioni», che chiede l'accesso come cittadino con <b>SPID, CIE o CNS</b>.
+Nella stessa pagina, alla scheda «Documenti», trovi i documenti del progetto.</p>
+<p>Il portale tiene conto anche dell'ora: l'ultimo giorno il pulsante può sparire prima di mezzanotte, quindi non aspettare l'ultimo momento.
+Sul portale non ho trovato un indirizzo PEC per le osservazioni, quindi non ne indico uno.</p>
+<p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
+
+
+def howto_unknown(p):
+    """A regional record whose authority has no how-to (a renamed authority string): never the Ministry's advice."""
+    print(f"via: no how-to for authority {p.get('authority')!r} ({p.get('id')})", file=sys.stderr)
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Il termine indicato è il <b>{day(p["termine_osservazioni"])}</b>. Le istruzioni sono nella <a href="{html.escape(p.get("url") or "")}">scheda ufficiale</a>.</p>"""
+
+
 def online_note(portal):
     if portal.get("online_disabled"):
         return (f" (il {day(portal['checked'])} il portale segnalava ancora, come dal 9 ottobre, il servizio online "
@@ -368,7 +450,8 @@ def online_note(portal):
 
 HOWTO = {"Regione Campania": howto_campania, "Regione del Veneto": howto_veneto,
          "Regione Liguria": howto_liguria, "Regione Sardegna": howto_sardegna,
-         "Regione Autonoma Valle d'Aosta": howto_valledaosta}
+         "Regione Autonoma Valle d'Aosta": howto_valledaosta, "Regione Toscana": howto_toscana, "Regione Puglia": howto_puglia}
+HOWTO.update({a: howto_lombardia for a in lombardia.AUTHORITIES})  # SILVIA lists the Region's, Provinces' and Comuni's procedures
 
 
 def write_procedure_pages(outdir, procs, today):
@@ -417,7 +500,7 @@ def write_procedure_pages(outdir, procs, today):
 <div class="table"><table class="facts"><tbody>
 {facts}
 </tbody></table></div>
-{"" if closed else HOWTO.get(p.get("authority"), lambda p: howto(p, portal))(p)}
+{"" if closed else HOWTO.get(p.get("authority"), howto_unknown if p.get("regional") else lambda p: howto(p, portal))(p)}
 <h2>Altre consultazioni</h2>
 <div class="actions">{"".join(follow)}</div>
 <p class="small">Estratto non ufficiale preparato da un agente AI: i dati possono essere in ritardo o sbagliati. Fa fede la scheda ufficiale ({e(authority(p))}).</p>"""
@@ -603,8 +686,12 @@ La guida passo per passo è quella dei <a href="../bandi/come-ricevere.html">ban
 Il Veneto pubblica la data di scadenza solo dopo le verifiche amministrative: i progetti ancora «in verifica amministrativa» non compaiono finché la data non c'è.</li>
 <li>Procedure della <b>Regione Liguria</b> con termine per le osservazioni non ancora scaduto, dall'<a href="https://siraviavas.regione.liguria.it/ElencoInCorsoVIA.aspx?page=1&amp;Tipo=VIA">elenco dei procedimenti in corso</a> (SIRAVIAS). Le procedure di competenza statale che l'elenco mostra sono già qui dal portale del Ministero; quelle senza data di termine nella colonna apposita non compaiono.</li>
 <li>Procedure della <b>Regione Sardegna</b> aperte alle osservazioni, dalle <a href="https://portal.sardegnasira.it/news-detail-valutazioni-ambientali">pubblicazioni del Servizio V.I.A.</a> sul portale SIRA. La Regione non pubblica una data di scadenza: la calcolo io dalla data di pubblicazione più i giorni scritti nel testo (di solito 30), e lo dico su ogni scheda; non sposto la data se cade di sabato, di domenica o in un giorno festivo. Se nel testo non c'è il numero di giorni, la procedura non compare. Fa fede l'avviso al pubblico.</li>
+<li>Procedure della <b>Regione Autonoma Valle d'Aosta</b> con termine per le osservazioni non ancora scaduto, dall'<a href="https://www.regione.vda.it/territorio/ambiente/valutazioniambientali/via/procedure_via_archivio_i.asp">archivio delle procedure VIA</a> della Regione.</li>
+<li>Procedure di <b>Regione Lombardia</b>, delle Province lombarde, della Città metropolitana di Milano e dei Comuni con termine per le osservazioni non ancora scaduto, dall'<a href="https://www.silvia.servizirl.it/silviaweb/">agenda del registro SILVIA</a>. Ogni scheda dice qual è l'autorità competente. Le procedure statali sono già qui dal portale del Ministero.</li>
+<li>Procedure della <b>Regione Toscana</b> con avviso al pubblico ancora in pubblicazione, dall'<a href="https://servizi.patti.regione.toscana.it/star-info/ente/GEA?dominio=GEA&amp;destinazione=avvisiPubblici">elenco degli avvisi pubblici di GeA</a>. Come scadenza uso la «data fine pubblicazione» dell'avviso. Le consultazioni più vecchie, avviate prima di GeA e pubblicate solo sul sito della Regione, non ci sono.</li>
+<li>Procedure della <b>Regione Puglia</b> con termine per le osservazioni non ancora scaduto (PAUR, verifiche di assoggettabilità e valutazioni di incidenza), dal <a href="https://pugliacon.regione.puglia.it/comp_pub/ricercaInPubblicita/true">portale Puglia.con</a>. Le VAS non sono incluse.</li>
 <li>Le altre Regioni non sono ancora incluse: le aggiungo dove i dati sono pubblicati in modo leggibile.</li>
-<li>Per ogni procedura: titolo, proponente, tipo di opera, luogo, date, stato, scadenza delle osservazioni e link alla scheda ufficiale. Non riporto documenti né recapiti.</li>
+<li>Per ogni procedura: titolo, proponente, tipo di opera, luogo, date, stato, scadenza delle osservazioni e link alla scheda ufficiale. Non riporto documenti; come recapiti indico solo quelli d'ufficio che l'autorità dà per le osservazioni.</li>
 <li>Se il termine cambia (per esempio per una ripubblicazione) la voce del feed risulta aggiornata.</li>
 <li>Aggiornamento automatico: i portali sono letti circa ogni 8 ore, le pagine si rigenerano ogni 4 ore.</li>
 </ul>
@@ -633,7 +720,7 @@ def main(outdir):
     procs = json.load(open(DATA, encoding="utf-8"))
     for f in REGIONAL_DATA:
         if os.path.exists(f):
-            procs.update(json.load(open(f, encoding="utf-8")))
+            procs.update({k: dict(v, regional=True) for k, v in json.load(open(f, encoding="utf-8")).items()})
     for p in procs.values():
         o = p.get("oggetto")
         if o and slug(o) not in slug(p["title"]) and slug(p["title"]) not in slug(o):

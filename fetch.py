@@ -43,10 +43,49 @@ NAMELIKE = re.compile(r"^(?:ditta |impresa individuale )?[A-ZÀ-Ý][a-zà-ÿ']+(
 TITLES = re.compile(r"^(?:(?:ing|dott|dott\.ssa|arch|geom|avv|sig|sig\.ra|prof)\.?\s+)+", re.I)
 
 
+FIRST_NAMES = set("""alberto alessandra alessandro alfredo angelo antonella antonio armando arturo attilio augusto beatrice benedetto
+bruno carla carlo carmela carmelo caterina cesare claudia claudio concetta cosimo cristina daniela daniele danilo davide
+domenico donato edoardo elena elisa emanuele enrico enzo erica ernesto eugenio fabio fabrizio federica federico felice
+ferdinando filippo francesca francesco franco gabriele gaetano giacomo gianluca gianni giancarlo gianpaolo giorgio
+giovanna giovanni giulia giuliano giulio giuseppe giuseppina graziano guido ignazio ilaria irene italo laura leonardo
+lorenzo luca luciano lucia luigi luisa manuel manuela marcello marco maria mariano marina mario martina massimo matteo
+mauro michele michela monica nicola nicolo nunzio orazio oreste paola paolo pasquale patrizia patrizio pierluigi piero
+pietro raffaele renato riccardo roberta roberto rocco rosa rosario rosanna salvatore samuele sandro sara saverio sergio
+silvia silvio simona simone stefania stefano tommaso ugo umberto valentina valerio vincenzo vittorio vito walter""".split())
+# a first name preceded by one of these is a place or saint, not a person ("Azienda Agricola San Martino")
+SAINT = {"san", "santa", "santo", "sant", "monte", "villa", "borgo", "podere", "masseria", "tenuta", "fondo", "casa", "cascina"}
+SOLE_PREFIX = re.compile(r"^(?:azienda agricola|azienda|az\.? ?agr\.?(?:icola)?|societ[àa]['’]? agricola|soc\.? ?agr\.?(?:icola)?|ditta|impresa)\s+(.+)$", re.I)
+SOLE_SUFFIX = re.compile(r"^(.+?)\s*(?:&|\be)\s*C\.?$|^(.+?)\s+S\.?\s?S\.?$", re.I)
+
+
+def _sole_trader(q):
+    """Sole-trader forms that carry a company keyword: 'Azienda Agricola Mario Rossi', 'AZ. AGR. ROSSI MARIO',
+    'Società Agricola Rossi Mario', 'Rossi Mario & C.', 'Mario Rossi S.s.': 2-3 plain words, one of them a first name."""
+    m = SOLE_PREFIX.match(q)
+    body = m[1] if m else None
+    if body is None:
+        m = SOLE_SUFFIX.match(q)
+        body = (m[1] or m[2]) if m else None
+    if body is None:
+        return False
+    body = re.sub(r"\s*(?:&|\be)\s*C\.?$|\s+S\.?\s?S\.?$", "", body.strip(), flags=re.I)
+    ws = body.split()
+    if not 2 <= len(ws) <= 3 or not all(re.fullmatch(r"[A-Za-zÀ-ÿ']+", w) for w in ws):
+        return False
+    low = [w.lower() for w in ws]
+    if any(w in SAINT for w in low):
+        return False
+    return any(w in FIRST_NAMES for w in low)
+
+
 def personlike(p):
     """Words only, in any case, 2 to 12 of them, no company or public-body keyword: likely one or more people
-    ('GRIGOLI GIANCARLO', 'ing. Mario Rossi', 'METALFER di Coppola Antonio'). Some small firms get dropped too: safe side."""
+    ('GRIGOLI GIANCARLO', 'ing. Mario Rossi', 'METALFER di Coppola Antonio'). Some small firms get dropped too: safe side.
+    Sole-trader forms with a keyword ('Azienda Agricola Mario Rossi', 'Rossi Mario & C.', 'Mario Rossi S.s.') are caught
+    by _sole_trader."""
     q = TITLES.sub("", p.strip())
+    if _sole_trader(q):
+        return True
     ws = re.findall(r"[^\s,]+", q)
     return not COMPANY.search(q) and 2 <= len(ws) <= 12 and all(re.fullmatch(r"[A-Za-zÀ-ÿ']+", w) for w in ws)
 
