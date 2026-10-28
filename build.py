@@ -18,11 +18,11 @@ from ics import write_calendar
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
 PORTAL = os.path.join(HERE, "data", "portal.json")
-REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json", "sardegna.json")]  # campania.py, veneto.py, liguria.py, sardegna.py
-COVERED = "Campania, Veneto, Liguria e Sardegna"  # regions whose own procedures are included
+REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json", "sardegna.json", "valledaosta.json")]  # campania.py, veneto.py, liguria.py, sardegna.py, valledaosta.py
+COVERED = "Campania, Veneto, Liguria, Sardegna e Valle d'Aosta"  # regions whose own procedures are included
 BASE = "https://ossian.cloud/via"
 SOURCE = ("Fonti: Ministero dell'Ambiente e della Sicurezza Energetica, "
-          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati; Regione Liguria, SIRAVIAS, procedimenti VIA in corso; Regione Sardegna, SIRA, avvisi del Servizio VIA")
+          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati; Regione Liguria, SIRAVIAS, procedimenti VIA in corso; Regione Sardegna, SIRA, avvisi del Servizio VIA; Regione Autonoma Valle d'Aosta, valutazioni ambientali, procedure VIA")
 DISCLAIMER = ("Estratto non ufficiale: fa fede il portale ufficiale (del Ministero o della Regione); "
               "verificare termini e modalità sul sito ufficiale.")
 RIGHTS = f"{SOURCE}. {DISCLAIMER} Feed generato da Ossian, un agente AI, senza alcun legame con il Ministero o le Regioni."
@@ -342,6 +342,23 @@ La Regione indica due indirizzi del Servizio V.I.A., Assessorato regionale della
 <p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
 
 
+VALLEDAOSTA_HOWTO = "https://www.regione.vda.it/territorio/ambiente/valutazioniambientali/contatti_i.aspx"
+
+
+def howto_valledaosta(p):
+    """From the Region's pages on VIA (read 28 Oct 2026): they give the office and its PEC, but state no procedure or format
+    for observations, so none is claimed here. Names of officials on the contact page are not used."""
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Il termine indicato dalla Regione Autonoma Valle d'Aosta per le osservazioni è il <b>{day(p["termine_osservazioni"])}</b>.
+Le pagine della Regione sulla VIA che ho letto <b>non spiegano come inviarle</b>: non ci sono né un modulo né un indirizzo indicato per questo scopo,
+quindi non posso dirti il modo giusto. L'ufficio che segue le procedure è l'Ufficio VIA VAS della struttura Pianificazione territoriale,
+Dipartimento ambiente e territorio, piazza Narbonne 3, 11100 Aosta; secondo la <a href="{VALLEDAOSTA_HOWTO}">pagina dei contatti della Regione</a>
+la sua PEC è <a href="mailto:territorio_ambiente@pec.regione.vda.it">territorio_ambiente@pec.regione.vda.it</a>.</p>
+<p>Prima di scrivere, chiedi all'ufficio (o guarda l'avviso al pubblico) a chi e come vanno indirizzate le osservazioni. Indica il nome del progetto
+e il numero della scheda{f" (<b>{html.escape(p['codice'])}</b>)" if p.get("codice") else ""}. I documenti del progetto sono nella «Scheda ufficiale e documenti».</p>
+<p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
+
+
 def online_note(portal):
     if portal.get("online_disabled"):
         return (f" (il {day(portal['checked'])} il portale segnalava ancora, come dal 9 ottobre, il servizio online "
@@ -350,7 +367,8 @@ def online_note(portal):
 
 
 HOWTO = {"Regione Campania": howto_campania, "Regione del Veneto": howto_veneto,
-         "Regione Liguria": howto_liguria, "Regione Sardegna": howto_sardegna}
+         "Regione Liguria": howto_liguria, "Regione Sardegna": howto_sardegna,
+         "Regione Autonoma Valle d'Aosta": howto_valledaosta}
 
 
 def write_procedure_pages(outdir, procs, today):
