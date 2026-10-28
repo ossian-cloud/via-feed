@@ -18,11 +18,11 @@ from ics import write_calendar
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
 PORTAL = os.path.join(HERE, "data", "portal.json")
-REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json")]  # campania.py, veneto.py, liguria.py
-COVERED = "Campania, Veneto e Liguria"  # regions whose own procedures are included
+REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json", "sardegna.json")]  # campania.py, veneto.py, liguria.py, sardegna.py
+COVERED = "Campania, Veneto, Liguria e Sardegna"  # regions whose own procedures are included
 BASE = "https://ossian.cloud/via"
 SOURCE = ("Fonti: Ministero dell'Ambiente e della Sicurezza Energetica, "
-          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati; Regione Liguria, SIRAVIAS, procedimenti VIA in corso")
+          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati; Regione Liguria, SIRAVIAS, procedimenti VIA in corso; Regione Sardegna, SIRA, avvisi del Servizio VIA")
 DISCLAIMER = ("Estratto non ufficiale: fa fede il portale ufficiale (del Ministero o della Regione); "
               "verificare termini e modalità sul sito ufficiale.")
 RIGHTS = f"{SOURCE}. {DISCLAIMER} Feed generato da Ossian, un agente AI, senza alcun legame con il Ministero o le Regioni."
@@ -110,15 +110,30 @@ def rounds_text(p):
     return "; ".join(f"dal {day(a)} al {day(d)}" if a else f"fino al {day(d)}" for a, d in p.get("rounds") or [])
 
 
+def computed_note(p):
+    """Only for records whose deadline is not published by the Region but computed by sardegna.py: say so plainly."""
+    if not p.get("termine_calcolato"):
+        return None
+    n = (f"La Regione non pubblica una data di scadenza: l'ho calcolata io, dalla data di pubblicazione ({day(p['avvio'])}) "
+         f"più i {p['giorni']} giorni che il testo della Regione indica. ")
+    if p.get("termine_festivo"):
+        n += (f"Il giorno calcolato cade di {p['termine_festivo']}" if p["termine_festivo"] in ("sabato", "domenica")
+              else "Il giorno calcolato è un giorno festivo") + " e non l'ho spostato. "
+    return n + "Fa fede l'avviso al pubblico della Regione: controlla lì il termine prima di inviare le osservazioni."
+
+
 def entry(p):
     e = html.escape
     rows = [("Procedura", p["procedure_type"]), ("Progetto", p.get("progetto")), ("Proponente", p.get("proponente")),
             ("Tipologia", p.get("tipologia")), ("Luogo", place(p)),
             ("Avvio consultazione", day(p.get("avvio"))),
-            ("Termine osservazioni", day(p["termine_osservazioni"])), ("Consultazioni aperte", rounds_text(p)),
+            ("Termine osservazioni", day(p["termine_osservazioni"]) + (" (calcolato da me)" if p.get("termine_calcolato") else "")),
+            ("Consultazioni aperte", rounds_text(p)),
             ("Codice procedura", p.get("id_vip") or p.get("codice")), ("Autorità competente", authority(p)),
             ("Stato", p.get("stato"))]
     parts = [f"<p>{e(p['title'])}</p>", "<ul>"] + [f"<li><b>{k}:</b> {e(v)}</li>" for k, v in rows if v] + ["</ul>"]
+    if computed_note(p):
+        parts.insert(1, f"<p><b>Attenzione:</b> {e(computed_note(p))}</p>")
     parts.append(f'<p><a href="{BASE}/{page_rel(p)}">Come presentare le osservazioni</a> · '
                  f'<a href="{e(p["url"])}">Scheda ufficiale ({e(authority(p))})</a></p>')
     parts.append(f"<p><small>{e(SOURCE)}. {e(DISCLAIMER)}</small></p>")
@@ -137,7 +152,7 @@ def entry(p):
 def event(p):
     lines = [p["title"], f"Avvio consultazione: {day(p['avvio'])}" if p.get("avvio") else None,
              f"Consultazioni aperte: {rounds_text(p)}" if p.get("rounds") else None,
-             f"Codice procedura: {p['id_vip']}" if p.get("id_vip") else None,
+             f"Codice procedura: {p['id_vip']}" if p.get("id_vip") else None, computed_note(p),
              f"Proponente: {p['proponente']}" if p.get("proponente") else None,
              f"Procedura: {p['procedure_type']} ({authority(p)})", f"Tipologia: {p['tipologia']}" if p.get("tipologia") else None,
              f"Luogo: {place(p)}" if place(p) else None, f"Come presentare le osservazioni: {BASE}/{page_rel(p)}",
@@ -306,6 +321,27 @@ Secondo gli avvisi della Regione Liguria vanno inviate al Settore Valutazione Im
 <p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
 
 
+SARDEGNA_HOWTO = "https://portal.sardegnasira.it/news-detail-valutazioni-ambientali"
+
+
+def howto_sardegna(p):
+    """From the Region's own notices on the SIRA news page of the Servizio V.I.A. (read 28 Oct 2026; every notice of the
+    open procedures carries the same sentence): observations to the PEC and the postal address below, and a form to download.
+    The avviso PDFs were not read: nothing beyond that sentence is claimed (no word on who may write, on the form being
+    compulsory, or on what to cite)."""
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Secondo la pagina della Regione Sardegna, il pubblico interessato può presentare osservazioni entro {p.get("giorni")} giorni dalla pubblicazione
+({day(p.get("avvio"))}): per questa procedura il termine che ho calcolato è il <b>{day(p["termine_osservazioni"])}</b> (vedi l'avvertenza qui sopra).
+La Regione indica due indirizzi del Servizio V.I.A., Assessorato regionale della Difesa dell'Ambiente:</p>
+<ul>
+<li><b>PEC</b> a <a href="mailto:difesa.ambiente@pec.regione.sardegna.it">difesa.ambiente@pec.regione.sardegna.it</a>;</li>
+<li><b>posta</b> a Servizio V.I.A., Via Roma 80, 09123 Cagliari.</li>
+</ul>
+<p>Sulla <a href="{SARDEGNA_HOWTO}">pagina delle pubblicazioni del Servizio V.I.A.</a> la Regione mette a disposizione anche un modulo per le osservazioni
+(«Scarica modulo osservazioni»). L'avviso e i documenti sono nella «Scheda ufficiale e documenti».</p>
+<p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
+
+
 def online_note(portal):
     if portal.get("online_disabled"):
         return (f" (il {day(portal['checked'])} il portale segnalava ancora, come dal 9 ottobre, il servizio online "
@@ -314,7 +350,7 @@ def online_note(portal):
 
 
 HOWTO = {"Regione Campania": howto_campania, "Regione del Veneto": howto_veneto,
-         "Regione Liguria": howto_liguria}
+         "Regione Liguria": howto_liguria, "Regione Sardegna": howto_sardegna}
 
 
 def write_procedure_pages(outdir, procs, today):
@@ -335,7 +371,8 @@ def write_procedure_pages(outdir, procs, today):
                 ("Codice procedura (ID_VIP/ID_MATTM)", p.get("id_vip")), ("Codice o numero sul portale regionale", p.get("codice")),
                 ("Progetto", p.get("progetto")), ("Proponente", p.get("proponente")), ("Tipologia", p.get("tipologia")),
                 ("Luogo", place(p)), ("Avvio della consultazione", day(p.get("avvio"))),
-                ("Termine per le osservazioni", day(end)), ("Consultazioni aperte", rounds_text(p)),
+                ("Termine per le osservazioni", day(end) + (" (calcolato da me)" if p.get("termine_calcolato") else "")),
+                ("Consultazioni aperte", rounds_text(p)),
                 ("Nota sul portale", p.get("note")), ("Stato sul portale", p.get("stato"))]
         facts = "\n".join(f"<tr><th>{k}</th><td>{e(v)}</td></tr>" for k, v in rows if v)
         status = (f'<p class="note"><b>Consultazione chiusa</b> il {day(end)}. La pagina resta per qualche giorno e poi viene tolta.</p>'
@@ -346,6 +383,8 @@ def write_procedure_pages(outdir, procs, today):
         if p.get("progetto") and not closed:
             status += ('<p class="note">La scheda ufficiale riguarda più procedure. Quella aperta alle osservazioni ha l\'oggetto '
                        f'indicato nel titolo qui sopra; il progetto della scheda è «{e(short(p["progetto"], 200))}».</p>')
+        if computed_note(p) and not closed:
+            status += f'<p class="note"><b>Attenzione:</b> {e(computed_note(p))}</p>'
         follow = [f'<a class="pill" href="../calendario/{slug(r)}.ics"><span aria-hidden="true">📅</span> Scadenze in {e(r)}</a>' for r in regs[:2]]
         follow += [f'<a class="pill" href="../feed/{slug(r)}.xml"><span aria-hidden="true">📡</span> Feed: {e(r)}</a>' for r in regs[:2]]
         follow += ['<a class="pill" href="../aperte.html">Tutte le consultazioni aperte</a>']
@@ -545,6 +584,7 @@ La guida passo per passo è quella dei <a href="../bandi/come-ricevere.html">ban
 <li>Procedure della <b>Regione del Veneto</b> con termine per le osservazioni non ancora scaduto (PAUR e verifiche di assoggettabilità), dalle <a href="https://www.regione.veneto.it/web/vas-via-vinca-nuvv/progetti-2026">pagine dei progetti presentati</a> nell'anno in corso e in quello precedente.
 Il Veneto pubblica la data di scadenza solo dopo le verifiche amministrative: i progetti ancora «in verifica amministrativa» non compaiono finché la data non c'è.</li>
 <li>Procedure della <b>Regione Liguria</b> con termine per le osservazioni non ancora scaduto, dall'<a href="https://siraviavas.regione.liguria.it/ElencoInCorsoVIA.aspx?page=1&amp;Tipo=VIA">elenco dei procedimenti in corso</a> (SIRAVIAS). Le procedure di competenza statale che l'elenco mostra sono già qui dal portale del Ministero; quelle senza data di termine nella colonna apposita non compaiono.</li>
+<li>Procedure della <b>Regione Sardegna</b> aperte alle osservazioni, dalle <a href="https://portal.sardegnasira.it/news-detail-valutazioni-ambientali">pubblicazioni del Servizio V.I.A.</a> sul portale SIRA. La Regione non pubblica una data di scadenza: la calcolo io dalla data di pubblicazione più i giorni scritti nel testo (di solito 30), e lo dico su ogni scheda; non sposto la data se cade di sabato, di domenica o in un giorno festivo. Se nel testo non c'è il numero di giorni, la procedura non compare. Fa fede l'avviso al pubblico.</li>
 <li>Le altre Regioni non sono ancora incluse: le aggiungo dove i dati sono pubblicati in modo leggibile.</li>
 <li>Per ogni procedura: titolo, proponente, tipo di opera, luogo, date, stato, scadenza delle osservazioni e link alla scheda ufficiale. Non riporto documenti né recapiti.</li>
 <li>Se il termine cambia (per esempio per una ripubblicazione) la voce del feed risulta aggiornata.</li>
