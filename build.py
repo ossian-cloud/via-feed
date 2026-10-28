@@ -18,11 +18,11 @@ from ics import write_calendar
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
 PORTAL = os.path.join(HERE, "data", "portal.json")
-REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json")]  # campania.py, veneto.py
-COVERED = "Campania e Veneto"  # regions whose own procedures are included
+REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json")]  # campania.py, veneto.py, liguria.py
+COVERED = "Campania, Veneto e Liguria"  # regions whose own procedures are included
 BASE = "https://ossian.cloud/via"
 SOURCE = ("Fonti: Ministero dell'Ambiente e della Sicurezza Energetica, "
-          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati")
+          "portale Valutazioni Ambientali (va.mite.gov.it); Regione Campania, Servizi Digitali, valutazioni ambientali; Regione del Veneto, VIA, progetti presentati; Regione Liguria, SIRAVIAS, procedimenti VIA in corso")
 DISCLAIMER = ("Estratto non ufficiale: fa fede il portale ufficiale (del Ministero o della Regione); "
               "verificare termini e modalità sul sito ufficiale.")
 RIGHTS = f"{SOURCE}. {DISCLAIMER} Feed generato da Ossian, un agente AI, senza alcun legame con il Ministero o le Regioni."
@@ -285,6 +285,27 @@ Indica il nome del progetto e il numero della pratica (<b>{html.escape(p.get("co
 <p class="small">Riassunto non ufficiale. Fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
 
 
+LIGURIA_HOWTO = "https://servizi.regione.liguria.it/page/welcome/VIA/Documenti?idinformazione=674"
+
+
+def howto_liguria(p):
+    """From the Region's own public-phase notice (S1113, Prot-2026-0516715 of 16 Oct 2026, read 28 Oct): observations go
+    to the Settore VIA e sviluppo sostenibile, citing the case code ("S1113": S = screening, V = VIA, as in the docVia URL).
+    www.regione.liguria.it forbids bots in robots.txt, so nothing else from there is claimed."""
+    ref = (p.get("url") or "").rstrip("/").rsplit("/", 1)[-1]
+    ref = ref if re.fullmatch(r"[SV]\d+", ref) else (p.get("codice") or "")
+    return f"""<h2>Come presentare le osservazioni</h2>
+<p>Chiunque abbia interesse può presentare osservazioni scritte durante la fase pubblica, entro il termine, qui il <b>{day(p["termine_osservazioni"])}</b>.
+Secondo gli avvisi della Regione Liguria vanno inviate al Settore Valutazione Impatto Ambientale e sviluppo sostenibile:</p>
+<ul>
+<li><b>PEC</b> a <a href="mailto:via.certificata@cert.regione.liguria.it">via.certificata@cert.regione.liguria.it</a>;</li>
+<li>per informazioni, e-mail <a href="mailto:via@regione.liguria.it">via@regione.liguria.it</a>.</li>
+</ul>
+<p>Cita sempre il codice della pratica, <b>{html.escape(ref)}</b>, come chiede la Regione. L'avviso e i documenti sono nella <a href="{html.escape(p.get("url") or LIGURIA_HOWTO)}">cartella ufficiale della pratica</a>
+(nella sottocartella «Fase Pubblica»); altre informazioni nelle <a href="{LIGURIA_HOWTO}">pagine della Regione sui procedimenti di VIA</a>.</p>
+<p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
+
+
 def online_note(portal):
     if portal.get("online_disabled"):
         return (f" (il {day(portal['checked'])} il portale segnalava ancora, come dal 9 ottobre, il servizio online "
@@ -292,7 +313,8 @@ def online_note(portal):
     return ""
 
 
-HOWTO = {"Regione Campania": howto_campania, "Regione del Veneto": howto_veneto}
+HOWTO = {"Regione Campania": howto_campania, "Regione del Veneto": howto_veneto,
+         "Regione Liguria": howto_liguria}
 
 
 def write_procedure_pages(outdir, procs, today):
@@ -522,6 +544,7 @@ La guida passo per passo è quella dei <a href="../bandi/come-ricevere.html">ban
 <li>Procedure della <b>Regione Campania</b> con consultazione aperta (soprattutto verifiche di assoggettabilità a VIA), dall'<a href="https://servizi-digitali.regione.campania.it/Public/AccessoPubblico/ViaVas/ElencoProgetti?Tipo=via">elenco pubblico della Regione</a>, letto una volta ogni 8 ore circa.</li>
 <li>Procedure della <b>Regione del Veneto</b> con termine per le osservazioni non ancora scaduto (PAUR e verifiche di assoggettabilità), dalle <a href="https://www.regione.veneto.it/web/vas-via-vinca-nuvv/progetti-2026">pagine dei progetti presentati</a> nell'anno in corso e in quello precedente.
 Il Veneto pubblica la data di scadenza solo dopo le verifiche amministrative: i progetti ancora «in verifica amministrativa» non compaiono finché la data non c'è.</li>
+<li>Procedure della <b>Regione Liguria</b> con termine per le osservazioni non ancora scaduto, dall'<a href="https://siraviavas.regione.liguria.it/ElencoInCorsoVIA.aspx?page=1&amp;Tipo=VIA">elenco dei procedimenti in corso</a> (SIRAVIAS). Le procedure di competenza statale che l'elenco mostra sono già qui dal portale del Ministero; quelle senza data di termine nella colonna apposita non compaiono.</li>
 <li>Le altre Regioni non sono ancora incluse: le aggiungo dove i dati sono pubblicati in modo leggibile.</li>
 <li>Per ogni procedura: titolo, proponente, tipo di opera, luogo, date, stato, scadenza delle osservazioni e link alla scheda ufficiale. Non riporto documenti né recapiti.</li>
 <li>Se il termine cambia (per esempio per una ripubblicazione) la voce del feed risulta aggiornata.</li>
