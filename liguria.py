@@ -42,7 +42,7 @@ TYPES = {"via regionale": "Procedura di VIA regionale",
          "paur": "PAUR (VIA regionale, art. 27-bis)",
          "lista di controllo art. 6 c. 9": "Valutazione preliminare (art. 6, c. 9)",
          "via interregionale": "VIA interregionale"}
-NATIONAL = re.compile(r"nazional|\bmase\b|\bmite\b|\bmatt\b|va\.mite\.gov", re.I)
+NATIONAL = re.compile(r"competenza (?:statale|nazionale)|via nazionale|\bmase\b|\bmite\b|\bmatt\b|va\.mite\.gov|ministero dell['’]ambiente", re.I)  # not bare "nazionale": "parco nazionale"
 SMALL = {"di", "del", "della", "delle", "dei", "degli", "e", "ed", "al", "alla", "in", "per", "da", "sul", "sulla"}
 SUFFIX = [(r"\bS\.?R\.?L\.?(?=\W|$)", "S.r.l."), (r"\bS\.?P\.?A\.?(?=\W|$)", "S.p.a."), (r"\bS\.?N\.?C\.?(?=\W|$)", "S.n.c."),
           (r"\bS\.?A\.?S\.?(?=\W|$)", "S.a.s."), (r"\bR\.?F\.?I\.?(?=\W|$)", "RFI"), (r"\bEnac\b", "ENAC"),
@@ -113,10 +113,13 @@ MONTHS = "gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ot
 NOTE_DEADLINE = re.compile(r"\b(?:scadenz\w*|termine)\b[^.;]{0,30}?\b(\d{1,2})(?:\s+(" + "|".join(MONTHS) + r")\s+|[/.-](\d{1,2})[/.-])(\d{4})\b", re.I)
 
 
+NOT_OBSERVATIONS = re.compile(r"integrazion|sospension|sospes|istruttori|conferenza|parere|proroga", re.I)  # other deadlines notes carry
+
+
 def note_deadline(nota):
     """The deadline the Region writes only in the note when the column is blank: "scadenza 20 novembre 2026" (pratica 1112, 28 Oct)."""
     m = NOTE_DEADLINE.search(nota)
-    if not m:
+    if not m or NOT_OBSERVATIONS.search(nota):
         return None
     month = MONTHS.index(m[2].lower()) + 1 if m[2] else int(m[3])
     try:
@@ -158,6 +161,7 @@ def run():
     today = now[:10]
     procs = json.load(open(DATA, encoding="utf-8")) if os.path.exists(DATA) else {}
     seen, rows, national, blank = {}, [], 0, 0
+    pages, read = MAX_REQUESTS, 0
     for page in range(1, MAX_REQUESTS + 1):
         url = LIST.format(page=page)
         try:
@@ -167,14 +171,18 @@ def run():
             if e.code in (403, 429):
                 open(BLOCKED, "w").write(f"{now} HTTP {e.code} on {url}\n")
             sys.exit(f"liguria: HTTP {e.code} on {url}")
+        last = re.search(r"pagina\s+\d+\s+di\s+(\d+)", h)
+        pages = int(last[1]) if last else pages
         if not got:
             break
         rows += got
-        last = re.search(r"pagina\s+\d+\s+di\s+(\d+)", h)
-        if last and page >= int(last[1]):  # the page says it is the last one: no request for an empty page
+        read = page
+        if page >= pages:  # the page says it is the last one: no request for an empty page
             break
         if page < MAX_REQUESTS:
             time.sleep(PAUSE)
+    if read < pages:  # a page came back empty or the pager was lost: its items would be closed by mistake
+        sys.exit(f"liguria: read {read} of {pages} pages: nothing written")
     if len(rows) < 15:  # 44 rows on 2026-10-27
         sys.exit(f"liguria: parsed only {len(rows)} rows: layout changed? nothing written")
     for x in rows:

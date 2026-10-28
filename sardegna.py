@@ -48,7 +48,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "sardegna.json")
 BLOCKED = os.path.join(HERE, "data", "BLOCKED-SARDEGNA")
 AUTHORITY = "Regione Sardegna"
-MIN_BLOCKS = 20  # 53 news blocks on 2026-10-28
+MIN_BLOCKS = 20  # 53-75 news blocks on 2026-10-28
+MIN_ITEMS = 10  # 37 with a computable deadline on 2026-10-28: fewer means the wording changed, and closing everything would be wrong
 NUMBERS = {"cinque": 5, "dieci": 10, "quindici": 15, "venti": 20, "trenta": 30, "quarantacinque": 45, "sessanta": 60,
            "novanta": 90}
 DATE = r"(\d{2})\.(\d{2})\.(\d{4})"
@@ -156,18 +157,35 @@ def type_of(title, body):
     return "Procedura regionale (Servizio V.I.A.)"
 
 
+EVENT = re.compile(r"\b(\d{2})\.(\d{2})\.(\d{4})\s*[-–]\s*([^\n]{0,80}?)\s+https?://")  # "28.08.2026 - Interruzione consultazione pubblica https://..."
+STOPPED = re.compile(r"\b(?:interruzion\w*|sospension\w*|sospes[oa]|revoc\w*|archiviazion\w*|ritirat[oa]|annullat[oa])\b", re.I)
+
+
 def parse(h):
-    """-> (n blocks seen, list of dicts) one per news block that states a consultation with a computable deadline."""
+    """-> (n blocks seen, list of dicts) one per news block that states a consultation with a computable deadline.
+    The page lists news newest first. Guards found by review on 28 Oct:
+    - a block can link the wrong procedure: Carta's "chiosco reception" (27.10) has two identical blocks, one linking
+      idOst 157132, which is really Fiume Santo's centro balneare. An idOst linked from blocks with different titles is
+      "ambiguous": its record links the news page, not a detail page. Identical blocks (title, date, days) are kept
+      once, preferring an unambiguous id, then the highest.
+    - when the "Precedenti pubblicazioni" history of any block for the same idOst lists an interruption (suspension,
+      revocation, withdrawal) dated on or after a notice, that notice is out (procedure 91761: 24.08 notice, 28.08
+      "Interruzione consultazione pubblica", 07.09 new notice)."""
     parts = re.split(r'<div class="news-detail">', h)[1:]
-    out, skipped, seen = [], 0, 0
+    blocks, out, skipped, seen = [], [], 0, 0
     for blk in parts:
         t = re.search(r"(?s)<h2[^>]*>(.*?)</h2>", blk)
         if not t or "news-detail-body" not in blk:
             continue
         seen += 1
-        link = re.search(r'href="[^"]*dettaglio-progetti-(via|vinca)\?idOst=(\d+)"', blk)
         i = blk.find("news-detail-body")
-        body = HISTORY.split(text(blk[blk.find(">", i) + 1:]), 1)[0]
+        title = ws(re.sub(r"<[^>]+>", " ", t[1]))
+        full = text(blk[blk.find(">", i) + 1:])
+        body = HISTORY.split(full, 1)[0]
+        stops = [f"{y}-{m}-{d}" for d, m, y, what in EVENT.findall(full) if STOPPED.search(what)]
+        link = re.search(r'href="[^"]*dettaglio-progetti-(via|vinca)\?idOst=(\d+)"', blk)  # the block's own procedure
+        ids = {link[2]} if link else set()  # later links can be strays: Banari's block also links Bultei's 159458
+        blocks.append((title, stops, ids))
         dm = DAYS.search(body)
         if not (link and dm):
             continue  # not a consultation by its own text (deposit, integration, outcome...) or no procedure page
@@ -177,9 +195,23 @@ def parse(h):
         if not (n and pub):
             skipped += 1
             continue
-        out.append({"kind": link[1], "n": link[2], "title": ws(re.sub(r"<[^>]+>", " ", t[1])), "body": body,
-                    "avvio": pub, "giorni": n})
-    return seen, out, skipped
+        if any(link[2] in ids2 and day >= pub for _, stops2, ids2 in blocks for day in stops2):
+            skipped += 1
+            continue  # a block's history says the consultation was interrupted (or the like) on or after this notice
+        out.append({"kind": link[1], "n": link[2], "title": title, "body": body, "avvio": pub, "giorni": n})
+    titles = {}
+    for title, _, ids in blocks:
+        for n in ids:
+            titles.setdefault(n, set()).add(re.sub(r"^(?:verifica(?: ex post)?|paur|via|vinca)\s*[-–—]\s*", "", title.lower()).strip(" ."))
+    for x in out:
+        x["ambiguous"] = len(titles.get(x["n"], ())) > 1
+    best = {}
+    for x in out:
+        key = (x["title"].lower(), x["avvio"], x["giorni"])
+        rank = lambda y: (y["ambiguous"], -int(y["n"]))  # unambiguous first, then the highest id
+        if key not in best or rank(x) < rank(best[key]):
+            best[key] = x
+    return seen, list(best.values()), skipped
 
 
 def record(x, old, today, now):
@@ -187,7 +219,7 @@ def record(x, old, today, now):
     comuni, codes = title_places(x["title"])
     prop = proponent(x["body"])
     rec = {"id": f"sardegna-{x['kind']}-{x['n']}", "authority": AUTHORITY, "codice": f"idOst {x['n']}",
-           "url": DETAIL.format(kind=x["kind"], n=x["n"]), "procedure_type": type_of(x["title"], x["body"]), "tipologia": None,
+           "url": PAGE if x.get("ambiguous") else DETAIL.format(kind=x["kind"], n=x["n"]), "procedure_type": type_of(x["title"], x["body"]), "tipologia": None,
            "title": x["title"], "proponente": None if not prop or personlike(prop) else prop,
            "regioni": ["Sardegna"], "province": [SIGLA_PROVINCE[c] for c in codes], "comuni": comuni,
            "avvio": x["avvio"], "termine_osservazioni": end.isoformat(), "termini": [end.isoformat()],
@@ -218,8 +250,8 @@ def run(src=None):
             open(BLOCKED, "w").write(f"{now} HTTP {e.code} on {PAGE}\n")
         sys.exit(f"sardegna: HTTP {e.code} on {PAGE}")
     seen_blocks, items, skipped = parse(h)
-    if seen_blocks < MIN_BLOCKS:
-        sys.exit(f"sardegna: parsed only {seen_blocks} news blocks: layout changed? nothing written")
+    if seen_blocks < MIN_BLOCKS or len(items) < MIN_ITEMS:
+        sys.exit(f"sardegna: parsed only {seen_blocks} news blocks, {len(items)} with a deadline: layout or wording changed? nothing written")
     seen = {}
     for x in items:
         rec = record(x, procs.get(f"sardegna-{x['kind']}-{x['n']}", {}), today, now)

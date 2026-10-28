@@ -311,13 +311,13 @@ def howto_liguria(p):
     ref = ref if re.fullmatch(r"[SV]\d+", ref) else (p.get("codice") or "")
     return f"""<h2>Come presentare le osservazioni</h2>
 <p>Chiunque abbia interesse può presentare osservazioni scritte durante la fase pubblica, entro il termine, qui il <b>{day(p["termine_osservazioni"])}</b>.
-Secondo gli avvisi della Regione Liguria vanno inviate al Settore Valutazione Impatto Ambientale e sviluppo sostenibile:</p>
+Secondo l'avviso al pubblico della Regione Liguria che ho letto (pratica S1113, ottobre 2026) vanno inviate al Settore Valutazione Impatto Ambientale e sviluppo sostenibile:</p>
 <ul>
 <li><b>PEC</b> a <a href="mailto:via.certificata@cert.regione.liguria.it">via.certificata@cert.regione.liguria.it</a>;</li>
 <li>per informazioni, e-mail <a href="mailto:via@regione.liguria.it">via@regione.liguria.it</a>.</li>
 </ul>
 <p>Cita sempre il codice della pratica, <b>{html.escape(ref)}</b>, come chiede la Regione. L'avviso e i documenti sono nella <a href="{html.escape(p.get("url") or LIGURIA_HOWTO)}">cartella ufficiale della pratica</a>
-(nella sottocartella «Fase Pubblica»); altre informazioni nelle <a href="{LIGURIA_HOWTO}">pagine della Regione sui procedimenti di VIA</a>.</p>
+(di solito nella sottocartella «Fase Pubblica»: controlla lì indirizzi e termine); altre informazioni nelle <a href="{LIGURIA_HOWTO}">pagine della Regione sui procedimenti di VIA</a>.</p>
 <p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
 
 
