@@ -20,6 +20,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data", "procedures.json")
 PORTAL = os.path.join(HERE, "data", "portal.json")
 REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json", "sardegna.json", "valledaosta.json", "lombardia.json", "toscana.json", "puglia.json")]  # one fetcher each: campania.py ... puglia.py
+SOURCE_NAMES = {"campania": "Campania", "veneto": "Veneto", "liguria": "Liguria", "sardegna": "Sardegna",
+                "valledaosta": "Valle d'Aosta", "lombardia": "Lombardia", "toscana": "Toscana", "puglia": "Puglia"}
+STALE_AFTER = dt.timedelta(hours=12)  # a fetcher rewrites its file on every successful run (every 4 h)
 COVERED = "Lombardia, Veneto, Liguria, Toscana, Campania, Puglia, Sardegna e Valle d'Aosta"  # regions whose own procedures are included
 BASE = "https://ossian.cloud/via"
 SOURCE = ("Fonti: Ministero dell'Ambiente e della Sicurezza Energetica, "
@@ -454,7 +457,13 @@ HOWTO = {"Regione Campania": howto_campania, "Regione del Veneto": howto_veneto,
 HOWTO.update({a: howto_lombardia for a in lombardia.AUTHORITIES})  # SILVIA lists the Region's, Provinces' and Comuni's procedures
 
 
-def write_procedure_pages(outdir, procs, today):
+def stale_note(src, since):
+    return (f'<p class="note"><b>Dati della Regione {html.escape(SOURCE_NAMES[src])} fermi al {since.strftime("%d/%m alle %H:%M")}:</b> '
+            "il portale regionale non risponde. Le consultazioni restano qui fino al termine registrato, ma nuove procedure "
+            "o cambi di termine potrebbero mancare. Controlla la scheda ufficiale.</p>")
+
+
+def write_procedure_pages(outdir, procs, today, stale={}):
     """One page per consultation that is open or closed less than GRACE_DAYS ago: what it is, where, the
     deadline, the official page first, and how to take part. Closed ones are noindex. Returns the indexable rels."""
     e = html.escape
@@ -484,6 +493,8 @@ def write_procedure_pages(outdir, procs, today):
         if p.get("progetto") and not closed:
             status += ('<p class="note">La scheda ufficiale riguarda più procedure. Quella aperta alle osservazioni ha l\'oggetto '
                        f'indicato nel titolo qui sopra; il progetto della scheda è «{e(short(p["progetto"], 200))}».</p>')
+        if p.get("src") in stale and not closed:
+            status += stale_note(p["src"], stale[p["src"]])
         if computed_note(p) and not closed:
             status += f'<p class="note"><b>Attenzione:</b> {e(computed_note(p))}</p>'
         follow = [f'<a class="pill" href="../calendario/{slug(r)}.ics"><span aria-hidden="true">📅</span> Scadenze in {e(r)}</a>' for r in regs[:2]]
@@ -577,7 +588,7 @@ Ogni titolo porta a una pagina con i dati essenziali, il link alla scheda uffici
               body, "aperte.html")
 
 
-def write_index(outdir, sets, when, latest_items):
+def write_index(outdir, sets, when, latest_items, stale={}):
     e = html.escape
     n = num_open(sets, "tutte")
     hero = f"""<section class="hero"><div class="wrap">
@@ -594,7 +605,7 @@ ma solo per poche settimane (da 15 a 60 giorni, secondo la procedura). Qui trovi
         f'<li><a href="{e(page_rel(p))}">{e(short(p["title"], 160))}</a>'
         f'<small>{e(" · ".join(m for m in [p.get("avvio") and "avviata il " + day(p["avvio"]), place(p), type_label(p), "scade " + day(p["termine_osservazioni"])] if m))}</small></li>'
         for p in latest_items)
-    body = f"""<div class="stats">
+    body = "".join(stale_note(k, v) for k, v in sorted(stale.items())) + f"""<div class="stats">
 <div><b>{n}</b><span>consultazioni aperte ora</span></div>
 <div><b>{nfeeds}</b><span>feed per regione e tipo di opera</span></div>
 <div><b>{ncal}</b><span>calendari delle scadenze</span></div>
@@ -718,14 +729,19 @@ Segnalazioni e correzioni: <a href="https://github.com/ossian-cloud/via-feed/iss
 
 def main(outdir):
     procs = json.load(open(DATA, encoding="utf-8"))
+    now = dt.datetime.now(ROME)
+    stale = {}
     for f in REGIONAL_DATA:
         if os.path.exists(f):
-            procs.update({k: dict(v, regional=True) for k, v in json.load(open(f, encoding="utf-8")).items()})
+            src = os.path.basename(f)[:-5]
+            procs.update({k: dict(v, regional=True, src=src) for k, v in json.load(open(f, encoding="utf-8")).items()})
+            mtime = dt.datetime.fromtimestamp(os.path.getmtime(f), ROME)
+            if now - mtime > STALE_AFTER:
+                stale[src] = mtime
     for p in procs.values():
         o = p.get("oggetto")
         if o and slug(o) not in slug(p["title"]) and slug(p["title"]) not in slug(o):
             p["progetto"], p["title"] = p["title"], o
-    now = dt.datetime.now(ROME)
     items = open_procedures(procs, now.strftime("%Y-%m-%d"))
     os.makedirs(outdir, exist_ok=True)
     latest = max((p["updated_at"] for p in procs.values()), default="2026-01-01T00:00:00Z")
@@ -733,8 +749,10 @@ def main(outdir):
     when = now.strftime("%d/%m/%Y alle %H:%M")
     write_table(outdir, items, when)
     newest = sorted(items, key=lambda p: (p.get("avvio") or p["first_seen"], p["id"]), reverse=True)[:15]
-    write_index(outdir, sets, when, newest)
-    write_sitemap(outdir, write_procedure_pages(outdir, procs, now.strftime("%Y-%m-%d")))
+    write_index(outdir, sets, when, newest, stale)
+    write_sitemap(outdir, write_procedure_pages(outdir, procs, now.strftime("%Y-%m-%d"), stale))
+    if stale:
+        print("stale regional data: " + ", ".join(f"{k} since {v:%d/%m %H:%M}" for k, v in sorted(stale.items())), file=sys.stderr)
     print(f"{len(items)} open procedures, {len(sets)} feeds", file=sys.stderr)
 
 
