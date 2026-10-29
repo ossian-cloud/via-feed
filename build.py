@@ -22,7 +22,7 @@ PORTAL = os.path.join(HERE, "data", "portal.json")
 REGIONAL_DATA = [os.path.join(HERE, "data", f) for f in ("campania.json", "veneto.json", "liguria.json", "sardegna.json", "valledaosta.json", "lombardia.json", "toscana.json", "puglia.json")]  # one fetcher each: campania.py ... puglia.py
 SOURCE_NAMES = {"campania": "Campania", "veneto": "Veneto", "liguria": "Liguria", "sardegna": "Sardegna",
                 "valledaosta": "Valle d'Aosta", "lombardia": "Lombardia", "toscana": "Toscana", "puglia": "Puglia"}
-STALE_AFTER = dt.timedelta(hours=12)  # a fetcher rewrites its file on every successful run (every 4 h)
+STALE_AFTER = dt.timedelta(hours=20)  # a fetcher rewrites its file on every successful run, about every 8 h: 20 h = two runs missed
 COVERED = "Lombardia, Veneto, Liguria, Toscana, Campania, Puglia, Sardegna e Valle d'Aosta"  # regions whose own procedures are included
 BASE = "https://ossian.cloud/via"
 SOURCE = ("Fonti: Ministero dell'Ambiente e della Sicurezza Energetica, "
