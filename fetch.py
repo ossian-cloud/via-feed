@@ -227,6 +227,9 @@ def parse_detail(h, termini=()):
         out["note"] = f("Note:", r"Responsabile del procedimento|Stato procedura", blk)
         if len(open_rounds) > 1:
             out["rounds"] = [[a, d] for d, a in open_rounds]
+    for k in ("title", "oggetto"):  # since 29 Oct some pages prefix "[ID_13503-VIAVIAF00000369]": scrub() took the code for a phone
+        if out.get(k):
+            out[k] = re.sub(r"^\[ID_[^\]]*\]\s*", "", out[k]) or None
     return out
 
 
@@ -312,7 +315,8 @@ def run(cache, max_detail):
     for pid in blocked_ids:
         seen.pop(pid, None)
         procs.pop(pid, None)
-    todo = [pid for pid, x in seen.items() if pid not in procs or procs[pid].get("termine_osservazioni") != x["termine"]
+    todo = [pid for pid, x in seen.items() if pid not in procs or not procs[pid].get("title")
+            or procs[pid].get("termine_osservazioni") != x["termine"]
             or procs[pid].get("termini") != x["termini"]]
     print(f"home {len(home)}, avvisi {len(avvisi)}, open {len(seen)}, detail to fetch {len(todo)} (cap {max_detail})", file=sys.stderr)
     try:

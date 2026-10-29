@@ -739,6 +739,9 @@ def main(outdir):
             if now - mtime > STALE_AFTER:
                 stale[src] = mtime
     for p in procs.values():
+        if not p.get("title"):  # one titleless record stopped every build on 29 Oct
+            p["title"] = p.get("oggetto") or ", ".join(x for x in (p["procedure_type"], p.get("tipologia")) if x)
+            print(f"no title: {p['id']}", file=sys.stderr)
         o = p.get("oggetto")
         if o and slug(o) not in slug(p["title"]) and slug(p["title"]) not in slug(o):
             p["progetto"], p["title"] = p["title"], o
