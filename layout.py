@@ -17,7 +17,7 @@ def top(active, depth=0):
     links = "".join(f'<li><a href="{b}{href}"' + (' aria-current="page"' if href == active else "") + f">{label}</a></li>"
                     for href, label in NAV)
     return f"""<a class="skip" href="#main">Vai al contenuto</a>
-<header class="top"><div class="wrap">
+<header class="top" id="top"><div class="wrap">
 <a class="brand" href="{b or './'}"><img src="{b}../img/logo.svg" alt="" width="36" height="36"><span>{TITLE}<small>{TAGLINE}</small></span></a>
 <nav aria-label="Sezioni"><ul class="nav">{links}</ul></nav>
 </div></header>"""
@@ -58,7 +58,7 @@ def head(title, description, depth=0, extra="", canonical=""):
 {og(title, description, extra, canonical)}
 {f'<link rel="canonical" href="{html.escape(canonical)}">' if canonical else ""}
 <link rel="icon" href="{b}../favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{b}../style.css?v=5">{extra}</head>
+<link rel="stylesheet" href="{b}../style.css?v=7">{extra}</head>
 <body>"""
 
 
@@ -78,9 +78,14 @@ def crumbs(items, depth=0):
             + '<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
 
 
+def totop(body):
+    """A plain back-to-top link at the end of long lists (suggested by a reader, 2 Nov)."""
+    return '\n<p class="totop"><a href="#top">↑ Torna su</a></p>' if body.count("<li") >= 20 else ""
+
+
 def page(title, description, body, active="", depth=0, extra_head="", before_main="", source="", disclaimer="", canonical=""):
     return (head(title, description, depth, extra_head, canonical) + "\n" + top(active, depth) + "\n" + before_main
-            + f'\n<main id="main" class="wrap">\n{body}\n</main>\n' + foot(depth, source, disclaimer) + "\n</body>\n</html>\n")
+            + f'\n<main id="main" class="wrap">\n{body}{totop(body)}\n</main>\n' + foot(depth, source, disclaimer) + "\n</body>\n</html>\n")
 
 
 def write(path, text):
