@@ -106,7 +106,7 @@ def tidy(raw):
     s = " ".join(out)
     for pat, rep in SUFFIX:
         s = re.sub(pat, rep, s, flags=re.I)
-    return s
+    return re.sub(r"\bSocieta'(?=\s|$)", "Società", s)  # the register writes the accent as an apostrophe
 
 
 def people(proponenti):
