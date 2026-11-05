@@ -68,13 +68,22 @@ SUFFIX = [(r"\bS\.?R\.?L\.?(?=\W|$)", "S.r.l."), (r"\bS\.?P\.?A\.?(?=\W|$)", "S.
 FORM = re.compile(r"\bS\.?R\.?L\.?|\bS\.?P\.?A\.?|\bGMBH\b|\bLTD\b", re.I)
 
 
+def companies(proponenti):
+    """All distinct "(Azienda: X)" / "(Ente: X)" of the field, as (raw, tidy) pairs, cleaned and in register order; the
+    people named after the colon are not read. The register repeats a company once per person, so duplicates are dropped."""
+    out, seen = [], set()
+    for m in re.finditer(r"\((?:Azienda|Ente):\s*([^)]+?)\s*\)", proponenti or ""):
+        raw = re.split(r",?\s+O IN FORMA ABBREVIATA", m[1], flags=re.I)[0].strip(" ,.-")
+        if raw and raw.lower() not in seen:
+            seen.add(raw.lower())
+            out.append((raw, tidy(raw)))
+    return out
+
+
 def company(proponenti):
-    """First "(Azienda: X)" or "(Ente: X)" of the field, cleaned; the people named after the colon are not read."""
-    m = re.search(r"\((?:Azienda|Ente):\s*([^)]+?)\s*\)", proponenti or "")
-    if not m:
-        return None, None
-    raw = re.split(r",?\s+O IN FORMA ABBREVIATA", m[1], flags=re.I)[0].strip(" ,.-")
-    return raw, tidy(raw)
+    """First company of the field: (raw, tidy), or (None, None)."""
+    c = companies(proponenti)
+    return c[0] if c else (None, None)
 
 
 def tidy(raw):
@@ -118,12 +127,12 @@ def loose(n):
     return p + r"\.?"
 
 
-def sentence(descr, raw, names):
+def sentence(descr, raw, names, more=()):
     s = " ".join((descr or "").replace("\r", " ").replace("\n", " ").split())
     s = re.sub(r"\[\s*ID[^\]]*\]\s*[-–]?\s*", "", s)  # "[ID 15049 - WEB-VIA ...]" prefix
     s = re.sub(r"\bRichiedente\s*:.*$", "", s, flags=re.I)
     s = re.sub(r"\b(?:Ditta|Soc\.)\s+[A-ZÀ-Ý0-9.&' -]{3,}?,\s*sede legale.*?(?=(?:\.\s)|$)", "la ditta", s)
-    for n in [raw] + names:
+    for n in [raw, *more] + names:
         if n:
             s = re.sub(r'["“]?' + loose(n) + r'["”]?', "la ditta", s, flags=re.I)
     for n in names:  # whatever is left of a person's name: the full "Name Surname" / "Surname Name" only, on word boundaries
@@ -164,16 +173,33 @@ def comune_of(descr):
     return None, None
 
 
+PAUR = re.compile(r"Provvedimento\s+Autorizzatorio\s+Unico|\bP\.?A\.?U\.?R\b|27\s*[-–]?\s*bis\b", re.I)
+
+
+def ptype(kind, descr):
+    """Register kind 3 is "VIA", but a request for the Provvedimento Autorizzatorio Unico (art. 27-bis) is a PAUR
+    (same label as toscana.py); kind 2 (verifica) is never relabelled."""
+    if kind == 3 and PAUR.search(descr or ""):
+        return "PAUR (VIA regionale, art. 27-bis)"
+    return TYPES[kind]
+
+
 def record(x, old, today, now):
     ente, kind = int(x["idTipoEnte"]), int(x["idTipoProcedura"])
     code = x["codProcedura"]
     suffix = code.rsplit("-", 1)[-1] if "-" in code else ""
     com, csig = comune_of(x["descrProgetto"])
     psig = suffix if suffix in LOMBARD else csig
-    raw, prop = company(x["proponenti"])
-    what = sentence(x["descrProgetto"], raw, people(x["proponenti"]))
+    comps = companies(x["proponenti"])
+    raw, prop = comps[0] if comps else (None, None)
+    names = []  # every company the register lists that is not a person: all are shown, joined with ", "
+    for _, t in comps:
+        if t and t not in names:
+            names.append(t)
+    props = ", ".join(names) or None
+    what = sentence(x["descrProgetto"], raw, people(x["proponenti"]), [r for r, _ in comps[1:]])
     if len(what) < 60 and prop and prop not in what:
-        what += " - " + prop
+        what += " - " + prop  # (first company only: keeps the title short)
     if ente == 7:
         auth = REGION
     elif ente == 6:
@@ -186,8 +212,8 @@ def record(x, old, today, now):
         where = provincia(psig) if psig else "Lombardia"
     avvio = iso(x["dataAvvio"])
     rec = {"id": f"lombardia-{x['idProgetto']}", "authority": auth, "codice": code,
-           "url": SCHEDA.format(ente=ente, kind=kind, pid=x["idProgetto"]), "procedure_type": TYPES[kind], "tipologia": None,
-           "title": f"{what} - {where}", "proponente": prop, "regioni": ["Lombardia"],
+           "url": SCHEDA.format(ente=ente, kind=kind, pid=x["idProgetto"]), "procedure_type": ptype(kind, x["descrProgetto"]), "tipologia": None,
+           "title": f"{what} - {where}", "proponente": props, "regioni": ["Lombardia"],
            "province": [SIGLA_PROVINCE[psig]] if psig else [], "comuni": [com] if com else [], "avvio": avvio,
            "termine_osservazioni": iso(x["dataScad"]), "termini": [iso(x["dataScad"])], "stato": None,
            "first_seen": old.get("first_seen", today), "last_seen": today, "closed_at": None,

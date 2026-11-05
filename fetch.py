@@ -227,6 +227,15 @@ def parse_detail(h, termini=()):
         out["note"] = f("Note:", r"Responsabile del procedimento|Stato procedura", blk)
         if len(open_rounds) > 1:
             out["rounds"] = [[a, d] for d, a in open_rounds]
+        # earlier rounds of the same procedure (their deadlines, already on the page), and what the open one is called
+        earlier = sorted({d for _, d in rounds(blk) if d < open_rounds[0][0]}) if open_rounds else []
+        if earlier:
+            out["precedenti"] = earlier
+            lab = re.search(r"Data\s+((?:[IVX]+\s+)?ripubblicazione)\b[^:]{0,60}:\s*" + re.sub(r"(\d{4})-(\d\d)-(\d\d)", r"\3/\2/\1", open_rounds[0][1]
+                            or "0"), blk, re.I)
+            out["ripubblicazione"] = lab[1] if lab else (
+                "nuova consultazione" if re.search(r"Data comunicazione avvio nuova consultazione pubblica\s*:\s*" + re.sub(
+                    r"(\d{4})-(\d\d)-(\d\d)", r"\3/\2/\1", open_rounds[0][1] or "0"), blk, re.I) else "ripubblicazione")
     for k in ("title", "oggetto"):  # since 29 Oct some pages prefix "[ID_13503-VIAVIAF00000369]": scrub() took the code for a phone
         if out.get(k):
             out[k] = re.sub(r"^\[ID_[^\]]*\]\s*", "", out[k]) or None
@@ -316,6 +325,7 @@ def run(cache, max_detail):
         seen.pop(pid, None)
         procs.pop(pid, None)
     todo = [pid for pid, x in seen.items() if pid not in procs or not procs[pid].get("title")
+            or "precedenti" not in procs[pid]  # one-off: records stored before the field existed get the earlier rounds
             or procs[pid].get("termine_osservazioni") != x["termine"]
             or procs[pid].get("termini") != x["termini"]]
     print(f"home {len(home)}, avvisi {len(avvisi)}, open {len(seen)}, detail to fetch {len(todo)} (cap {max_detail})", file=sys.stderr)
@@ -330,6 +340,7 @@ def run(cache, max_detail):
                    "comuni": d.get("comuni", []), "avvio": d.get("avvio") or x.get("avvio"),
                    "termine_osservazioni": x["termine"] or d.get("termine"), "termini": x["termini"], "stato": d.get("stato"),
                    "id_vip": d.get("id_vip"), "oggetto": d.get("oggetto"), "note": d.get("note"), "rounds": d.get("rounds"),
+                   "precedenti": d.get("precedenti"), "ripubblicazione": d.get("ripubblicazione"),
                    "first_seen": old.get("first_seen", today), "last_seen": today, "closed_at": None,
                    "updated_at": now if old.get("termine_osservazioni") != (x["termine"] or d.get("termine")) else old.get("updated_at", now)}
             procs[pid] = scrub(rec)

@@ -114,6 +114,21 @@ def rounds_text(p):
     return "; ".join(f"dal {day(a)} al {day(d)}" if a else f"fino al {day(d)}" for a, d in p.get("rounds") or [])
 
 
+def republication_note(p):
+    """MASE pages that republish an earlier consultation: say which round this is and when the earlier ones closed."""
+    lab = p.get("ripubblicazione") or "ripubblicazione"
+    if lab == "nuova consultazione":
+        what = "una nuova consultazione della stessa procedura"
+    elif lab == "ripubblicazione":
+        what = "una ripubblicazione"
+    else:
+        what = f"la {lab}"
+    ds = [day(d) for d in p["precedenti"]]
+    ends = ds[0] if len(ds) == 1 else ", il ".join(ds[:-1]) + " e il " + ds[-1]
+    return (f"Questa è {what}: la consultazione precedente si è chiusa il {ends}." if len(ds) == 1
+            else f"Questa è {what}: le consultazioni precedenti si sono chiuse il {ends}.")
+
+
 def computed_note(p):
     """Only for records whose deadline is not published by the Region but computed by sardegna.py: say so plainly."""
     if not p.get("termine_calcolato"):
@@ -335,14 +350,13 @@ def howto_sardegna(p):
     compulsory, or on what to cite)."""
     return f"""<h2>Come presentare le osservazioni</h2>
 <p>Secondo la pagina della Regione Sardegna, il pubblico interessato può presentare osservazioni entro {p.get("giorni")} giorni dalla pubblicazione
-({day(p.get("avvio"))}): per questa procedura il termine che ho calcolato è il <b>{day(p["termine_osservazioni"])}</b> (vedi l'avvertenza qui sopra).
+({day(p.get("avvio"))}): per questa procedura il termine {"che ho calcolato" if p.get("termine_calcolato") else "indicato dalla Regione sulla scheda del procedimento"} è il <b>{day(p["termine_osservazioni"])}</b>{" (vedi l'avvertenza qui sopra)" if p.get("termine_calcolato") else ""}.
 La Regione indica due indirizzi del Servizio V.I.A., Assessorato regionale della Difesa dell'Ambiente:</p>
 <ul>
 <li><b>PEC</b> a <a href="mailto:difesa.ambiente@pec.regione.sardegna.it">difesa.ambiente@pec.regione.sardegna.it</a>;</li>
 <li><b>posta</b> a Servizio V.I.A., Via Roma 80, 09123 Cagliari.</li>
 </ul>
-<p>Sulla <a href="{SARDEGNA_HOWTO}">pagina delle pubblicazioni del Servizio V.I.A.</a> la Regione mette a disposizione anche un modulo per le osservazioni
-(«Scarica modulo osservazioni»). L'avviso e i documenti sono nella «Scheda ufficiale e documenti».</p>
+<p>Sulla <a href="{SARDEGNA_HOWTO}">pagina delle pubblicazioni del Servizio V.I.A.</a> {"la Regione mette a disposizione anche un modulo per le osservazioni («Scarica modulo osservazioni»). " if p.get("modulo", True) else "l'avviso di questa procedura non rimanda a un modulo per le osservazioni. "}L'avviso e i documenti sono nella «Scheda ufficiale e documenti».</p>
 <p class="small">Riassunto non ufficiale: fanno fede l'avviso al pubblico e le indicazioni della Regione.</p>"""
 
 
@@ -506,6 +520,8 @@ def write_procedure_pages(outdir, procs, today, stale={}):
         if p.get("rounds") and not closed:
             status += (f'<p class="note"><b>Su questa procedura sono aperte {len(p["rounds"])} consultazioni</b> con scadenze diverse '
                        f'({e(rounds_text(p))}). Qui uso la più vicina. Controlla sulla scheda ufficiale a quali documenti si riferisce ciascuna.</p>')
+        if p.get("precedenti") and not closed:
+            status += f'<p class="note">{e(republication_note(p))}</p>'
         if p.get("progetto") and not closed:
             status += ('<p class="note">La scheda ufficiale riguarda più procedure. Quella aperta alle osservazioni ha l\'oggetto '
                        f'indicato nel titolo qui sopra; il progetto della scheda è «{e(short(p["progetto"], 200))}».</p>')

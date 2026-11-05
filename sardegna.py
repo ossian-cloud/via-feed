@@ -27,6 +27,13 @@ Comune and province come from the title only when it says "comune di X" / "a X (
 depositato" / "Il Comune di X ha depositato" and the like. Otherwise empty. Proponents that look like natural persons are
 dropped (fetch.personlike / scrub); no name of an official or technician is ever read (the text is not stored).
 
+Detail pages: after the news page, each open item's own page on the Region's portal (DETAIL, one request each, 1.5 s apart)
+is read for "Termini per la consultazione" and "Comune/i" / "Provincia/e". When "Pubblicazione" there equals the notice's
+publication date and the Termini date is 1-120 days later, that date is the Region's own deadline ("termine_regione": true,
+no "termine_calcolato"); otherwise the computed one stays. Places replace the title-derived ones when present. A failed or
+empty detail page changes nothing and never closes an item. "modulo" = the news block itself has the "Scarica modulo
+osservazioni" link.
+
 Usage: python3 sardegna.py
 Writes data/sardegna.json (dict id -> record). Refuses to run while data/BLOCKED-SARDEGNA exists.
 """
@@ -36,6 +43,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -198,7 +206,8 @@ def parse(h):
         if any(link[2] in ids2 and day >= pub for _, stops2, ids2 in blocks for day in stops2):
             skipped += 1
             continue  # a block's history says the consultation was interrupted (or the like) on or after this notice
-        out.append({"kind": link[1], "n": link[2], "title": title, "body": body, "avvio": pub, "giorni": n})
+        out.append({"kind": link[1], "n": link[2], "title": title, "body": body, "avvio": pub, "giorni": n,
+                    "modulo": "scarica modulo osservazioni" in body.lower()})  # the block itself links the observations form
     titles = {}
     for title, _, ids in blocks:
         for n in ids:
@@ -214,6 +223,61 @@ def parse(h):
     return seen, list(best.values()), skipped
 
 
+def dmy(s):
+    m = re.fullmatch(r"\s*(\d{2})/(\d{2})/(\d{4})\s*", s or "")
+    try:
+        return dt.date(int(m[3]), int(m[2]), int(m[1])).isoformat() if m else None
+    except ValueError:
+        return None
+
+
+def detail_fields(h):
+    """The label/value pairs of the Region's procedure page (dettaglio-progetti-*): the text lines after each label."""
+    t = re.sub(r"(?s)<(script|style).*?</\1>", "", h)
+    lines = [ws(x) for x in re.split(r"<[^>]+>", t)]
+    lines = [x for x in lines if x]
+    out = {}
+    for i, x in enumerate(lines[:-1]):
+        key = x.rstrip(":").strip().lower()
+        if key in ("pubblicazione", "termini per la consultazione", "comune/i", "provincia/e") and key not in out:
+            out[key] = lines[i + 1].rstrip(":")
+    return out
+
+
+def comune_name(c):
+    """"TRINITA' D'AGULTU E VIGNOLA" -> "Trinità d'Agultu e Vignola" (title case, small words lower, final A' -> À)."""
+    c = re.sub(r"([AEIOU])'(?=\s|$)", lambda m: {"A": "À", "E": "È", "I": "Ì", "O": "Ò", "U": "Ù"}[m[1]], c.strip().upper())
+    out = []
+    for i, w in enumerate(c.split()):
+        low = w.lower()
+        if i and low in ("e", "di", "del", "della", "dei", "de", "sa", "su"):
+            out.append(low)
+        else:
+            out.append("'".join(p[:1].upper() + p[1:].lower() for p in low.split("'")) if "'" not in low[:2] else low[:2] + low[2:].capitalize())
+    return " ".join(out)
+
+
+def apply_detail(rec, fields):
+    """Take the Region's own deadline and place from its procedure page. The deadline is trusted only when the page's
+    "Pubblicazione" date is the news notice's publication date (a page still on an older round must not override) and the
+    deadline is after it and at most 120 days later; then it is the Region's, not computed (no termine_calcolato).
+    Anything missing or odd leaves the record as the news page gave it."""
+    pub, term = dmy(fields.get("pubblicazione")), dmy(fields.get("termini per la consultazione"))
+    if pub and term and pub == rec["avvio"] and 0 < (dt.date.fromisoformat(term) - dt.date.fromisoformat(pub)).days <= 120:
+        rec["termine_osservazioni"], rec["termini"] = term, [term]
+        rec.pop("termine_calcolato", None)
+        rec.pop("termine_festivo", None)
+        rec["termine_regione"] = True
+    names = {v.lower(): v for v in SIGLA_PROVINCE.values()}
+    provs = [names[p.strip().lower()] for p in re.split(r"[,;/]", fields.get("provincia/e", "")) if p.strip().lower() in names]
+    comuni = [comune_name(c) for c in re.split(r"[,;]", fields.get("comune/i", "")) if 2 <= len(c.strip()) <= 40]
+    if comuni:
+        rec["comuni"] = comuni
+    if provs:
+        rec["province"] = provs
+    return scrub(rec)
+
+
 def record(x, old, today, now):
     end = dt.date.fromisoformat(x["avvio"]) + dt.timedelta(days=x["giorni"])
     comuni, codes = title_places(x["title"])
@@ -223,7 +287,7 @@ def record(x, old, today, now):
            "title": x["title"], "proponente": None if not prop or personlike(prop) else prop,
            "regioni": ["Sardegna"], "province": [SIGLA_PROVINCE[c] for c in codes], "comuni": comuni,
            "avvio": x["avvio"], "termine_osservazioni": end.isoformat(), "termini": [end.isoformat()],
-           "termine_calcolato": True, "giorni": x["giorni"], "stato": None,
+           "termine_calcolato": True, "giorni": x["giorni"], "modulo": x["modulo"], "stato": None,
            "first_seen": old.get("first_seen", today), "last_seen": today, "closed_at": None,
            "updated_at": now if old.get("termine_osservazioni") != end.isoformat() else old.get("updated_at", now)}
     if non_working(end):
@@ -231,9 +295,9 @@ def record(x, old, today, now):
     return scrub(rec)
 
 
-def get(url):
+def get(url, timeout=60):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "it"})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
 
 
@@ -262,6 +326,20 @@ def run(src=None):
     for pid, r in procs.items():
         if pid not in seen and not r.get("closed_at"):
             r["closed_at"] = today
+    for i, rec in enumerate(list(seen.values())):  # the Region's own procedure page, one request each; a failure keeps the news data
+        if rec["url"] == PAGE:
+            continue  # ambiguous id: the procedure page may be another procedure's
+        kind, n = rec["id"].split("-")[1:]
+        try:
+            time.sleep(1.5)
+            fields = detail_fields(get(DETAIL.format(kind=kind, n=n), timeout=30))
+        except Exception as e:
+            print(f"sardegna: detail page {n} failed ({e}): keeping the news data", file=sys.stderr)
+            continue
+        new = apply_detail(dict(rec), fields)
+        if new["termine_osservazioni"] >= today:  # a detail page never closes an item
+            new["updated_at"] = now if procs.get(rec["id"], {}).get("termine_osservazioni") != new["termine_osservazioni"] else rec["updated_at"]
+            seen[rec["id"]] = new
     procs.update(seen)
     limit = (dt.date.fromisoformat(today) - dt.timedelta(days=KEEP_CLOSED_DAYS)).isoformat()
     procs = {k: v for k, v in procs.items() if not v.get("closed_at") or v["closed_at"] >= limit}
@@ -270,7 +348,7 @@ def run(src=None):
         json.dump(procs, f, ensure_ascii=False, indent=1, sort_keys=True)
     os.replace(DATA + ".tmp", DATA)
     print(f"sardegna: {seen_blocks} news blocks, {len(items)} with a computable deadline ({skipped} skipped: no usable "
-          f"date or days), {len(seen)} open, stored {len(procs)}, 1 request", file=sys.stderr)
+          f"date or days), {len(seen)} open, stored {len(procs)}, 1 + detail requests", file=sys.stderr)
 
 
 if __name__ == "__main__":
