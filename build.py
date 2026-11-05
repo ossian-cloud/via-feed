@@ -495,8 +495,14 @@ def write_procedure_pages(outdir, procs, today, stale={}):
                 ("Consultazioni aperte", rounds_text(p)),
                 ("Nota sul portale", p.get("note")), ("Stato sul portale", p.get("stato"))]
         facts = "\n".join(f"<tr><th>{k}</th><td>{e(v)}</td></tr>" for k, v in rows if v)
-        status = (f'<p class="note"><b>Consultazione chiusa</b> il {day(end)}. La pagina resta per qualche giorno e poi viene tolta.</p>'
-                  if closed else "")
+        gone = p.get("closed_at")
+        if gone and gone < end:  # dropped by the source before its deadline: withdrawn, not started, or moved
+            status = (f'<p class="note"><b>Non più elencata tra le consultazioni aperte</b> dal {day(gone)}, prima del termine '
+                      f'indicato ({day(end)}). Può essere stata ritirata, sospesa o non ancora avviata: controlla la scheda '
+                      'ufficiale prima di inviare osservazioni. La pagina resta per qualche giorno e poi viene tolta.</p>')
+        else:
+            status = (f'<p class="note"><b>Consultazione chiusa</b> il {day(end)}. La pagina resta per qualche giorno e poi viene tolta.</p>'
+                      if closed else "")
         if p.get("rounds") and not closed:
             status += (f'<p class="note"><b>Su questa procedura sono aperte {len(p["rounds"])} consultazioni</b> con scadenze diverse '
                        f'({e(rounds_text(p))}). Qui uso la più vicina. Controlla sulla scheda ufficiale a quali documenti si riferisce ciascuna.</p>')
