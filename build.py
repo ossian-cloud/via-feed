@@ -315,7 +315,7 @@ def howto_liguria(p):
     ref = ref if re.fullmatch(r"[SV]\d+", ref) else (p.get("codice") or "")
     return f"""<h2>Come presentare le osservazioni</h2>
 <p>Chiunque abbia interesse può presentare osservazioni scritte durante la fase pubblica, entro il termine, qui il <b>{day(p["termine_osservazioni"])}</b>.
-Secondo l'avviso al pubblico della Regione Liguria che ho letto (pratica S1113, ottobre 2026) vanno inviate al Settore Valutazione Impatto Ambientale e sviluppo sostenibile:</p>
+Secondo un avviso al pubblico della Regione Liguria che ho letto (ottobre 2026), vanno inviate al Settore Valutazione Impatto Ambientale e sviluppo sostenibile:</p>
 <ul>
 <li><b>PEC</b> a <a href="mailto:via.certificata@cert.regione.liguria.it">via.certificata@cert.regione.liguria.it</a>;</li>
 <li>per informazioni, e-mail <a href="mailto:via@regione.liguria.it">via@regione.liguria.it</a>.</li>
