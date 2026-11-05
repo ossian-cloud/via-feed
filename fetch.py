@@ -249,6 +249,8 @@ def personal(s):
 def scrub(rec):
     """Drop every field that carries contact data or may name a natural person."""
     for k, v in list(rec.items()):
+        if k in ("id", "url"):  # made from the source's own ids: a uuid like "0588349a-…" read as a phone number (5 Nov 2026)
+            continue
         if isinstance(v, list):
             rec[k] = [x for x in v if not (isinstance(x, str) and personal(x))]
         elif isinstance(v, str) and personal(v):
