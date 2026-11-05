@@ -135,7 +135,10 @@ def record(x, det, old, today, now):
     comuni = [c["nome_comune"].strip() for c in det.get("comuniprocedura") or [] if c.get("nome_comune")] or old.get("comuni") or []
     d = deadline(x["scadenzaOsservazioni"])
     start = deadline(x.get("avvioOsservazioni"))
-    avvio = start  # the portal's own "Data avvio consultazioni" (checked in the browser 28 Oct); dataPubblicazione is not shown there, so not used
+    # the portal's "Data avvio consultazioni" is the first filing on 6 of 15 items (5 Nov 2026 audit: 2025 dates on calls closing
+    # in Nov 2026); dataPubblicazione is the start of the current window (deadline minus 45 or 30 days on all 15): the later wins
+    pub = deadline(x.get("dataPubblicazione") or det.get("dataPubblicazione"))
+    avvio = pub if pub and (not start or start < pub <= d) else start
     prop = proponent(x.get("proponente"))
     dropped = raw_proponent(x.get("proponente")) if x.get("proponente") and not prop else None
     rec = {"id": "puglia-" + x["id"], "authority": AUTHORITY, "codice": x.get("codice"), "url": PAGE.format(id=x["id"]),
