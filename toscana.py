@@ -8,7 +8,13 @@ The page itself reads one JSON list, POST https://servizi.toscana.it/pub-api/sua
 Deadline: the field "dataFinePubblicazione", shown by the page as "Data Fine Pubblicazione" (end of the publication of the
 notice, which is the period for observations: 30 days in nearly every notice). Both dates are local midnight stored as UTC
 ("2026-11-20T23:00:00Z" = 21 Nov 2026 in Rome), so the date is read in the Europe/Rome zone. No other date is used as a
-deadline. The notices' "stato" text is NOT used: it is stale on some notices (still "Consultazione in corso" after the end).
+deadline. The notices' "stato" text is NOT used for the end: it is stale on some notices (still "Consultazione in corso"
+after the end). It is used for one thing: "Verifica amministrativa" means the documents were filed and the procedure, with
+its observation period, has not started (PAUR 283, read 5 Nov 2026: "il procedimento sarà avviato successivamente alla
+verifica della completezza documentale"), so those notices are left out until the state changes.
+Some notices stay published 31 days while their text gives "30 giorni dalla pubblicazione" (277 and 280, read 5 Nov 2026:
+published 15/10 and 19/10, GeA end 15/11 and 19/11). For windows one day longer than 30, 45 or 60 days the deadline is the
+publication date plus 30, 45 or 60 days (the earlier, safer date); the GeA end is kept as "fine_pubblicazione".
 
 Rules:
 - Included: notices whose end date is today or later, of the types that are VIA procedures (see TYPES), and whose
@@ -156,6 +162,7 @@ def local_date(ts):
 
 def record(e, c, kind, old, today, now, comuni):
     start, end = local_date(e["dataInizioPubblicazione"]), local_date(e["dataFinePubblicazione"])
+    shown = end - dt.timedelta(days=1) if (end - start).days in (31, 46, 61) else end  # "30 giorni dalla pubblicazione"
     cs = split_comuni(c.get("comune"), comuni)
     rec_desc = e.get("descrizione") or c.get("opera") or ""
     siglas = list(dict.fromkeys(s for _, s, _ in cs if s))
@@ -168,9 +175,10 @@ def record(e, c, kind, old, today, now, comuni):
            "procedure_type": TYPES[kind], "tipologia": None,
            "title": title_of(rec_desc, cs, dropped), "proponente": re.sub(r"\s+", " ", prop) or None,
            "regioni": regions, "province": [SIGLA_PROVINCE[s] for s in siglas], "comuni": [n for n, _, _ in cs],
-           "avvio": start.isoformat(), "termine_osservazioni": end.isoformat(), "termini": [end.isoformat()], "stato": None,
+           "avvio": start.isoformat(), "termine_osservazioni": shown.isoformat(), "termini": [shown.isoformat()], "stato": None,
+           "fine_pubblicazione": end.isoformat() if shown != end else None,
            "first_seen": old.get("first_seen", today), "last_seen": today, "closed_at": None,
-           "updated_at": now if old.get("termine_osservazioni") != end.isoformat() else old.get("updated_at", now)}
+           "updated_at": now if old.get("termine_osservazioni") != shown.isoformat() else old.get("updated_at", now)}
     return scrub(rec)
 
 
@@ -206,7 +214,7 @@ def run():
     if not isinstance(total, int) or len(items) != total or total < 50:  # 206 on 2026-10-28; paging over an unstable sort loses items
         sys.exit(f"toscana: got {len(items)} distinct notices, the list says {total}: nothing written")
     comuni = load_comuni()
-    seen, national, skipped, long_window, bad_date, bad_content = {}, 0, 0, 0, 0, 0
+    seen, national, skipped, long_window, bad_date, bad_content, not_started = {}, 0, 0, 0, 0, 0, 0
     for e in items.values():
         try:
             end, start = local_date(e["dataFinePubblicazione"]), local_date(e["dataInizioPubblicazione"])
@@ -220,6 +228,9 @@ def run():
             kind = kind.rstrip(") ")  # "Modifica di prescrizioni)" on one notice
         if kind not in TYPES:
             skipped += 1
+            continue
+        if (e.get("stato") or "").strip().lower() == "verifica amministrativa":  # filed, the consultation not started yet
+            not_started += 1
             continue
         if (end - start).days > MAX_WINDOW:
             long_window += 1
@@ -256,7 +267,7 @@ def run():
         json.dump(procs, f, ensure_ascii=False, indent=1, sort_keys=True)
     os.replace(DATA + ".tmp", DATA)
     print(f"toscana: {len(items)} notices, {skipped} open of other types and {long_window} with a long window (dropped), "
-          f"{national} national (dropped), {len(seen)} open, stored {len(procs)}", file=sys.stderr)
+          f"{national} national (dropped), {not_started} not started (dropped), {len(seen)} open, stored {len(procs)}", file=sys.stderr)
 
 
 if __name__ == "__main__":

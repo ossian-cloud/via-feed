@@ -131,7 +131,7 @@ def entry(p):
     rows = [("Procedura", p["procedure_type"]), ("Progetto", p.get("progetto")), ("Proponente", p.get("proponente")),
             ("Tipologia", p.get("tipologia")), ("Luogo", place(p)),
             ("Avvio consultazione", day(p.get("avvio"))),
-            ("Termine osservazioni", day(p["termine_osservazioni"]) + (" (calcolato da me)" if p.get("termine_calcolato") else "")),
+            ("Termine osservazioni", day(p["termine_osservazioni"]) + (" (calcolato da me)" if p.get("termine_calcolato") or p.get("fine_pubblicazione") else "")),
             ("Consultazioni aperte", rounds_text(p)),
             ("Codice procedura", p.get("id_vip") or p.get("codice")), ("Autorità competente", authority(p)),
             ("Stato", p.get("stato"))]
@@ -396,9 +396,19 @@ TOSCANA_HOWTO = "https://www.regione.toscana.it/-/valutazione-di-impatto-ambient
 def howto_toscana(p):
     """From two notices of the Region's VIA office (read 28 Oct 2026; "Recapito per la presentazione delle osservazioni"):
     PEC to the Region's single address or post to Piazza dell'Unita' Italiana 1, Firenze, to the Settore Valutazione impatto
-    ambientale; the Region recommends its own model. The GeA pages show no instructions, so the notice's documents rule."""
-    end = f"""<p>L'avviso della Regione Toscana resta pubblicato fino al <b>{day(p["termine_osservazioni"])}</b> («data fine pubblicazione» su GeA): uso questa data
+    ambientale; the Region recommends its own model. The GeA pages show no instructions, so the notice's documents rule.
+    Verifica notices of October 2026 (277, 280, read 5 Nov 2026) put first ("prioritariamente") the guided online form on
+    GeA-Info; the PAUR notice 285 lists only PEC, post and fax."""
+    if p.get("fine_pubblicazione"):
+        end = f"""<p>Gli avvisi della Regione Toscana danno 30 giorni dalla pubblicazione per le osservazioni. Questo avviso è pubblicato dal {day(p.get("avvio"))}, quindi
+il termine dovrebbe cadere il <b>{day(p["termine_osservazioni"])}</b>; GeA però lo tiene pubblicato fino al {day(p["fine_pubblicazione"])}. Indico la data più prudente:
+controlla nell'avviso.</p>"""
+    else:
+        end = f"""<p>L'avviso della Regione Toscana resta pubblicato fino al <b>{day(p["termine_osservazioni"])}</b> («data fine pubblicazione» su GeA): uso questa data
 come scadenza, ma GeA non dice esplicitamente che sia il termine per le osservazioni. Controlla nell'avviso.</p>"""
+    online = ("""<li><b>online</b>, con la compilazione guidata sul portale GeA-Info, dalla scheda dell'avviso: negli avvisi di verifica più recenti
+la Regione la indica come modalità prioritaria;</li>
+""" if p["procedure_type"].startswith("Verifica") else "")
     if not p["procedure_type"].startswith(("Verifica", "PAUR")):  # the notices read were a verifica and a VIA/PAUR one
         return f"""<h2>Come presentare le osservazioni</h2>
 {end}
@@ -410,7 +420,7 @@ e nelle <a href="{TOSCANA_HOWTO}">pagine della Regione sulla VIA</a>.</p>
 <p>Negli avvisi di verifica e di VIA della Regione Toscana che ho letto (ottobre 2026) le osservazioni vanno indirizzate al Settore Valutazione impatto ambientale
 della Regione Toscana, con queste modalità:</p>
 <ul>
-<li><b>PEC</b> a <a href="mailto:regionetoscana@postacert.toscana.it">regionetoscana@postacert.toscana.it</a>, l'indirizzo unico della Regione;</li>
+{online}<li><b>PEC</b> a <a href="mailto:regionetoscana@postacert.toscana.it">regionetoscana@postacert.toscana.it</a>, l'indirizzo unico della Regione;</li>
 <li>per posta a Piazza dell'Unità Italiana 1, 50123 Firenze.</li>
 </ul>
 <p>Gli avvisi raccomandano di usare il <a href="https://www.regione.toscana.it/-/informativa-agli-interessati-regolamento">modello pubblicato sul sito della Regione</a>.
@@ -481,7 +491,7 @@ def write_procedure_pages(outdir, procs, today, stale={}):
                 ("Codice procedura (ID_VIP/ID_MATTM)", p.get("id_vip")), ("Codice o numero sul portale regionale", p.get("codice")),
                 ("Progetto", p.get("progetto")), ("Proponente", p.get("proponente")), ("Tipologia", p.get("tipologia")),
                 ("Luogo", place(p)), ("Avvio della consultazione", day(p.get("avvio"))),
-                ("Termine per le osservazioni", day(end) + (" (calcolato da me)" if p.get("termine_calcolato") else "")),
+                ("Termine per le osservazioni", day(end) + (" (calcolato da me)" if p.get("termine_calcolato") or p.get("fine_pubblicazione") else "")),
                 ("Consultazioni aperte", rounds_text(p)),
                 ("Nota sul portale", p.get("note")), ("Stato sul portale", p.get("stato"))]
         facts = "\n".join(f"<tr><th>{k}</th><td>{e(v)}</td></tr>" for k, v in rows if v)
