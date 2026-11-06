@@ -247,8 +247,13 @@ def short_title(p):
                   r"(VIA|valutazione\s+di\s+impatto\s+ambientale))?(\s*[-–:]\s*|\s+per\s+(un[oa]?\s+|la\s+)?)", "", rest, flags=re.I)
     rest = re.sub(r"^la società\s+(?=[A-Z])", "", rest)
     t = rest if len(rest) >= 8 else t
-    t = re.sub(r"^(progetto|istanza)\s+(definitivo\s+|esecutivo\s+)?((per|relativo a|relativa a)\s+)?"
-               r"(la realizzazione\s+|la costruzione\s+|l'esercizio\s+)?(di|del|della|dello|dell')?\s*", "", t, flags=re.I)
+    t = re.sub(r"^(il\s+)?progetto\s+prevede\s+(la\s+|il\s+|lo\s+|l['’])?", "", t, flags=re.I)
+    of = r"((di|del|della|dello|delle|dei|degli|al|allo|alla|ai|agli|alle|a)\s+|(dell|all)['’]\s*)?"
+    build_ = r"((la\s+)?(realizzazione|costruzione)(\s+e\s+(l['’])?esercizio)?\s+|l['’]esercizio\s+)"
+    t = re.sub(r"^(progetto|istanza)\s+((definitivo|esecutivo|attuativo)\s*[:,]?\s+)?"
+               r"(di\s+fattibilit[aà]\s+tecnic[oa][\s-]+(ed?\s+)?econom\w*\s*:?\s*)?"
+               rf"((per|relativ[oa])\s+)?{build_}?{of}", "", t, flags=re.I)
+    t = re.sub(rf"^(per\s+{build_}|relativ[oa]\s+){of}", "", t, flags=re.I)  # the same, without 'Progetto'
     t = re.sub(r"^((un|una|uno|il|la|lo)\s+|l')", "", t, flags=re.I)
     m = re.search(r"\bdenominat[oa]\s+[\"“«]([^\"”»]{2,60})[\"”»]", t)
     if m:  # 'impianto eolico della potenza di 99,2 MW denominato "Orria" da...' -> 'impianto eolico Orria'
