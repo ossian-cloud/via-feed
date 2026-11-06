@@ -24,10 +24,12 @@ import os
 import re
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 
 from fetch import UA, scrub, iso, personlike, KEEP_CLOSED_DAYS
+from liguria_comuni import COMUNI
 from sigle import SIGLA_PROVINCE, SIGLA_REGION
 
 LIST = "https://siraviavas.regione.liguria.it/ElencoInCorsoVIA.aspx?page={page}&Tipo=VIA"
@@ -60,8 +62,9 @@ def fix_quotes(s):
     return re.sub(r"¿", '"', s)
 
 
-def sentence(s, comuni=()):
-    """The list writes titles all in lower case: give back the acronyms, company forms and the row's own comuni."""
+def sentence(s, comuni=(), proponente=""):
+    """The list writes titles all in lower case: give back the acronyms, company forms, the row's own comuni,
+    the Ligurian provinces and the proponent's name."""
     s = fix_quotes(s)
     s = re.sub(r"^\s*[\[(]?\s*id(?:_vip)?\s*:?\s*\d+\s*[\])]?\s*[-–:]?\s*", "", s, flags=re.I)  # '[id: 12495] ' prefix
     s = s.strip(" -–")
@@ -72,6 +75,10 @@ def sentence(s, comuni=()):
     s = re.sub(r"\bs\.\s?p\.\s?a\.", "S.p.A.", s)
     for c in comuni:
         s = re.sub(r"\b(comun[ei] di |provincia di |a |in )" + re.escape(c.lower()) + r"\b", lambda m: m[1] + comune_name(c), s)
+    s = re.sub(r"\b(provincia di |provincia della )(genova|savona|imperia|spezia|la spezia)\b", lambda m: m[1] + comune_name(m[2]), s)
+    prop = name(proponente)
+    if prop and not personlike(proponente):
+        s = re.sub(re.escape(prop), lambda m: prop, s, flags=re.I)
     return s[:1].upper() + s[1:]
 
 
@@ -91,6 +98,12 @@ def comune_name(c):
     accent = {"a": "à", "e": "è", "i": "ì", "o": "ò", "u": "ù"}
     c = re.sub(r"([aeiou])'$", lambda m: accent[m[1]], c.strip().lower())
     return " ".join(w if i and w in SMALL else w[:1].upper() + w[1:] for i, w in enumerate(c.split()))
+
+
+def comune_key(c):
+    """'prela'' -> PRELA, the key of liguria_comuni.COMUNI."""
+    c = unicodedata.normalize("NFKD", comune_name(c)).encode("ascii", "ignore").decode()
+    return " ".join(c.upper().replace("'", " ").replace("-", " ").split())
 
 
 def parse(h):
@@ -135,11 +148,13 @@ def is_national(x):
 def record(x, old, today, now):
     codes = [m.upper() for m in re.findall(r"\(\s*([A-Za-z]{2})\s*\)", x["title"]) if m.upper() in SIGLA_PROVINCE]
     pid = re.sub(r"[^a-z0-9]+", "-", x["pratica"].lower()).strip("-")
+    keys = [comune_key(c) for c in x["comuni"]]
     rec = {"id": f"liguria-{pid}", "authority": AUTHORITY, "codice": x["pratica"], "url": x["url"] or LIST.format(page=1),
            "procedure_type": TYPES.get(x["tipo"], x["tipo"].capitalize()), "tipologia": None,
-           "title": sentence(x["title"], x["comuni"]), "proponente": name(x["proponente"]) or None,
-           "regioni": sorted({SIGLA_REGION[c] for c in codes} | {"Liguria"}), "province": [SIGLA_PROVINCE[c] for c in dict.fromkeys(codes)],
-           "comuni": [comune_name(c) for c in x["comuni"]], "avvio": x["avvio"],
+           "title": sentence(x["title"], x["comuni"], x["proponente"]), "proponente": name(x["proponente"]) or None,
+           "regioni": sorted({SIGLA_REGION[c] for c in codes} | {"Liguria"}),
+           "province": list(dict.fromkeys([SIGLA_PROVINCE[c] for c in codes] + [COMUNI[k][1] for k in keys if k in COMUNI and COMUNI[k][0] != COMUNI[k][1]])),
+           "comuni": [COMUNI[k][0] if k in COMUNI else comune_name(c) for c, k in zip(x["comuni"], keys)], "avvio": x["avvio"],
            "termine_osservazioni": x["termine"], "termini": [x["termine"]], "stato": None,
            "first_seen": old.get("first_seen", today), "last_seen": today, "closed_at": None,
            "updated_at": now if old.get("termine_osservazioni") != x["termine"] else old.get("updated_at", now)}
