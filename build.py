@@ -241,6 +241,12 @@ def page_rel(p):
 def short_title(p):
     """The project's name without the 'Progetto per la realizzazione di' that most titles start with."""
     t = " ".join(p["title"].split()).strip('" ')
+    # the procedure's name, which the label already gives ('Verifica - Cava X', '[2718] ...'); 'Verifica ex post' stays
+    rest = re.sub(r"^\[\d+\]\s*", "", t)
+    rest = re.sub(r"^(istanza\s+di\s+)?verifica(\s+di\s+assoggettabilit[aà]\s+(a|alla)\s+(procedura\s+di\s+)?"
+                  r"(VIA|valutazione\s+di\s+impatto\s+ambientale))?(\s*[-–:]\s*|\s+per\s+(un[oa]?\s+|la\s+)?)", "", rest, flags=re.I)
+    rest = re.sub(r"^la società\s+(?=[A-Z])", "", rest)
+    t = rest if len(rest) >= 8 else t
     t = re.sub(r"^(progetto|istanza)\s+(definitivo\s+|esecutivo\s+)?((per|relativo a|relativa a)\s+)?"
                r"(la realizzazione\s+|la costruzione\s+|l'esercizio\s+)?(di|del|della|dello|dell')?\s*", "", t, flags=re.I)
     t = re.sub(r"^((un|una|uno|il|la|lo)\s+|l')", "", t, flags=re.I)
