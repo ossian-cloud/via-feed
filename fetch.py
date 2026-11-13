@@ -38,7 +38,9 @@ COMPANY = re.compile(r"\b(?:s\.?r\.?l|s\.?p\.?a|s\.?a\.?s|s\.?n\.?c|s\.?c\.?a?r?
                      r"fondazione|cooperativa|coop|gruppo|energia|energy|power|solar|wind|green|renewable|"
                      r"italia|italiana|group|holding|porto|porti|anas|rfi|enel|eni|terna|snam|a2a|iren|"
                      r"unione|università|consortium|company|spa|srl|srls|park|impianti|costruzioni|"
-                     r"comunit\w*|consorz\w*|direzion\w*|rinnovabil\w*)\b", re.I)
+                     r"comunit\w*|consorz\w*|direzion\w*|rinnovabil\w*|"
+                     r"comando|carabinieri|legione|prefettura|questura|polizia|esercito|aeronautica|ospedal\w*|asl|asst|"
+                     r"metropolitana|bonifica|acquedott\w*|aeroport\w*|ferrovi\w*|istituto|parrocchia|diocesi)\b", re.I)
 NAMELIKE = re.compile(r"^(?:ditta |impresa individuale )?[A-ZÀ-Ý][a-zà-ÿ']+(?: (?:de|di|del|della|dal|d'|la|lo)?\s?[A-ZÀ-Ý][a-zà-ÿ']+){1,3}$")
 TITLES = re.compile(r"^(?:(?:ing|dott|dott\.ssa|arch|geom|avv|sig|sig\.ra|prof)\.?\s+)+", re.I)
 

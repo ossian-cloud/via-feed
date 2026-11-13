@@ -127,6 +127,7 @@ def sentence(s, dropped=None):
     s = PERSON_REF.sub("la ditta", s)
     s = re.sub(r"\b(del|dal|al)\s+la ditta", lambda m: {"del": "della", "dal": "dalla", "al": "alla"}[m[1].lower()] + " ditta", s)
     s = re.sub(r"\s*\[\s*(?:ID|CUP)[^\]]*\]", "", s, flags=re.I)  # "[ID 2744 - GEA 26971]", "[CUP: ...]"
+    s = re.sub(r"^\s*\[\d+\]\s*", "", s)  # a bare "[2718] " in front (audit 2026-11-13)
     s = s.strip(" -")
     s = re.sub(r"^art\.?\s*\d+\s+l\.?\s?r\.?\s*10/2010\s*[.;]\s*", "", s, flags=re.I)
     s = LAW.sub("", s, count=1)

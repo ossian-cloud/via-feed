@@ -14,7 +14,8 @@ data/BLOCKED-LOMBARDIA is written and stops all further runs.
 Requests per run: 6, PAUSE seconds apart; nothing is written unless all 6 succeed.
 
 Rules:
-- Included: items whose dataScad is today or later. Authority = the competent entity: "Regione Lombardia" (level 7),
+- Included: items whose dataScad is today or later. The Agenda drops an item on its dataScad day: a stored item
+  whose deadline is today stays open until tomorrow even when not listed. Authority = the competent entity: "Regione Lombardia" (level 7),
   "Provincia di X" / "Città metropolitana di Milano" (level 6, X from the province suffix of the code, e.g. VER0713-BS),
   "Comune" (level 5; the register gives no name). The list is the Region's register but not only the Region's procedures.
 - Title: the project description (first sentence, at most ~150 characters, "Richiedente:"/"Ditta" parts and any name of
@@ -279,8 +280,10 @@ def run():
     if still_open and len(still_open & set(seen)) < len(still_open) / 2:
         sys.exit(f"lombardia: only {len(still_open & set(seen))} of {len(still_open)} stored still-open records seen: "
                  "suspicious answer, nothing written")
+    # the Agenda stops listing a project on its dataScad day, which is still the last day for observations
+    # (dataAvvio + 30, art. 19/27-bis): keep it open until the day after (8 of 8 closed records, audit 2026-11-13)
     for pid, r in procs.items():
-        if pid not in seen and not r.get("closed_at"):
+        if pid not in seen and not r.get("closed_at") and (r.get("termine_osservazioni") or "") != today:
             r["closed_at"] = today
     procs.update(seen)
     limit = (dt.date.fromisoformat(today) - dt.timedelta(days=KEEP_CLOSED_DAYS)).isoformat()

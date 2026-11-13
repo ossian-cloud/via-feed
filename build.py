@@ -97,8 +97,9 @@ def regions_of(p):
 
 
 def place(p):
-    # the portal sometimes lists a region or province name among the comuni
-    not_comuni = {slug(x) for x in REGIONS + p.get("regioni", []) + p.get("province", [])}
+    # the portal sometimes lists a region name among the comuni; a province name there is its capoluogo (Salerno, Rieti),
+    # so it is kept (audit 2026-11-13: 25 records, all real comuni)
+    not_comuni = {slug(x) for x in REGIONS + p.get("regioni", [])}
     comuni = [c for c in p.get("comuni", []) if slug(c) not in not_comuni]
     bits = [", ".join(comuni), ", ".join(p.get("province", [])) and "prov. " + ", ".join(p["province"]),
             ", ".join(regions_of(p))]
@@ -263,7 +264,7 @@ def short_title(p):
 
 
 def first_comune(p):
-    comuni = [c for c in p.get("comuni", []) if slug(c) not in {slug(x) for x in REGIONS + p.get("province", [])}]
+    comuni = [c for c in p.get("comuni", []) if slug(c) not in {slug(x) for x in REGIONS}]
     return comuni[0] if comuni else None
 
 
@@ -423,7 +424,7 @@ def howto_toscana(p):
     PEC to the Region's single address or post to Piazza dell'Unita' Italiana 1, Firenze, to the Settore Valutazione impatto
     ambientale; the Region recommends its own model. The GeA pages show no instructions, so the notice's documents rule.
     Verifica notices of October 2026 (277, 280, read 5 Nov 2026) put first ("prioritariamente") the guided online form on
-    GeA-Info; the PAUR notice 285 lists only PEC, post and fax."""
+    GeA-Info; the PAUR notice 285 lists only PEC, post and fax, PAUR 265 (read 13 Nov) puts the online form first."""
     if p.get("fine_pubblicazione"):
         end = f"""<p>Gli avvisi della Regione Toscana danno 30 giorni dalla pubblicazione per le osservazioni. Questo avviso è pubblicato dal {day(p.get("avvio"))}, quindi
 il termine dovrebbe cadere il <b>{day(p["termine_osservazioni"])}</b>; GeA però lo tiene pubblicato fino al {day(p["fine_pubblicazione"])}. Indico la data più prudente:
@@ -433,7 +434,9 @@ controlla nell'avviso.</p>"""
 come scadenza, ma GeA non dice esplicitamente che sia il termine per le osservazioni. Controlla nell'avviso.</p>"""
     online = ("""<li><b>online</b>, con la compilazione guidata sul portale GeA-Info, dalla scheda dell'avviso: negli avvisi di verifica più recenti
 la Regione la indica come modalità prioritaria;</li>
-""" if p["procedure_type"].startswith("Verifica") else "")
+""" if p["procedure_type"].startswith("Verifica") else """<li><b>online</b>, con la compilazione guidata sul portale GeA-Info, dalla scheda dell'avviso: alcuni avvisi PAUR la indicano
+come modalità prioritaria, altri no; controlla nell'avviso se è prevista;</li>
+""" if p["procedure_type"].startswith("PAUR") else "")
     if not p["procedure_type"].startswith(("Verifica", "PAUR")):  # the notices read were a verifica and a VIA/PAUR one
         return f"""<h2>Come presentare le osservazioni</h2>
 {end}
@@ -523,7 +526,7 @@ def write_procedure_pages(outdir, procs, today, stale={}):
         gone = p.get("closed_at")
         if gone and gone < end:  # dropped by the source before its deadline: withdrawn, not started, or moved
             status = (f'<p class="note"><b>Non più elencata tra le consultazioni aperte</b> dal {day(gone)}, prima del termine '
-                      f'indicato ({day(end)}). Può essere stata ritirata, sospesa o non ancora avviata: controlla la scheda '
+                      f'indicato ({day(end)}). Può essere stata ritirata, sospesa, conclusa o non ancora avviata: controlla la scheda '
                       'ufficiale prima di inviare osservazioni. La pagina resta per qualche giorno e poi viene tolta.</p>')
         else:
             status = (f'<p class="note"><b>Consultazione chiusa</b> il {day(end)}. La pagina resta per qualche giorno e poi viene tolta.</p>'
