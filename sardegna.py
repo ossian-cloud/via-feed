@@ -24,7 +24,8 @@ procedimento" link of the block). It is the Region's own procedure number, stabl
 block is skipped. If two blocks share an id, the later deadline wins.
 
 Comune and province come from the title only when it says "comune di X" / "a X (SS)"; proponent only from "La Società X ha
-depositato" / "Il Comune di X ha depositato" and the like. Otherwise empty. Proponents that look like natural persons are
+depositato" / "Il Comune di X ha depositato" / "Il sig. ..., legale rappresentante della Società X, ha depositato"
+(only X is captured) and the like. Otherwise empty. Proponents that look like natural persons are
 dropped (fetch.personlike / scrub); no name of an official or technician is ever read (the text is not stored).
 
 Detail pages: after the news page, each open item's own page on the Region's portal (DETAIL, one request each, 1.5 s apart)
@@ -70,7 +71,14 @@ SMALL = r"(?:di|del|della|dei|degli|delle|de|sa|su|s')"
 NAME = r"[A-ZÀ-Ý][\wà-ÿ'’]*(?:\s+(?:" + SMALL + r"\s+)?[A-ZÀ-Ý][\wà-ÿ'’]*)*"
 TITLE_COMUNE = re.compile(r"\b[Cc]omune\s+di\s+(" + NAME + r")")
 TITLE_PROV = re.compile(r"\b(?:a|ad)\s+(" + NAME + r")\s*\(\s*([A-Z]{2})\s*\)")
-PROPONENT = [re.compile(r"(?:^|\.\s)(?:La\s+)?Societ[àa]\s+(.+?)\s*,?\s+ha\s+(?:depositato|trasmesso)"),
+PROPONENT = [re.compile(r"(?:^|\.\s)(?:La\s+)?[Ss]ociet[àa]\s+(.+?)\s*,?\s+ha\s+(?:depositato|trasmesso)"),
+             # "Il sig. NAME, legale rappresentante della Società X, ha depositato": only X is read, never the person
+             re.compile(r"^(?:Il|La)\s+sig\.?(?:ra)?\s+[^,]{3,60},\s+(?:legale\s+)?(?:rappresentante|in\s+qualità\s+di\s+"
+                        r"(?:legale\s+)?rappresentante)\s+dell[a']\s*(?:[Ss]ociet[àa]\s+(?!Agricola)|impresa\s+)?([^,]{3,100}?)\s*,"
+                        r"(?:\s+tramite\s+il\s+tecnico\s+incaricato\s*,)?\s+ha\s+depositato"),
+             # public bodies: "Il comune di Badesi, ha depositato", "L'unione dei Comuni ...", "La Provincia di Oristano ha ..."
+             re.compile(r"^(?:Il|La|L['’])\s*((?:[Cc]omune|[Pp]rovincia|[Uu]nione|Ministero|Consorzio|Agenzia|Autorit[àa]|Ente)\b"
+                        r"[^.]{2,150}?)\s*(?:\([A-Z]{2}\))?\s*,?\s+ha\s+depositato"),
              re.compile(r"da\s+parte\s+della\s+Societ[àa]\s+(.+?)\s*,\s+è\s+stato"),
              re.compile(r"(?:^|\.\s)(?:Il\s+)?(Comune\s+di\s+" + NAME + r")\s*,?\s+ha\s+depositato"),
              re.compile(r"(?:^|\.\s)(?:La\s+)?(Città\s+Metropolitana\s+di\s+" + NAME + r")\s*,?\s+ha\s+depositato")]
@@ -146,7 +154,8 @@ def proponent(body):
         m = rx.search(body)
         if m:
             p = ws(m[1]).strip(" ,")
-            return p if 3 <= len(p) <= 80 else None
+            p = p[:1].upper() + p[1:]
+            return p if 3 <= len(p) <= 150 else None
     return None
 
 
